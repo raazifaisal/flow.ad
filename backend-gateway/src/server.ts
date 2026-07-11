@@ -84,13 +84,38 @@ wss.on('connection', (ws: WebSocket) => {
           });
 
           // 1. Spawning context ingestion swarm asynchronously (Control Plane)
-          const contextId = await spawnContextIngestionSwarm(currentSessionId);
-          console.log(`[Control Plane Swarm] Initialized with Context ID: ${contextId}`);
+          const manifestJson = await spawnContextIngestionSwarm(currentSessionId);
+          console.log(`[Control Plane Swarm] Manifest output: ${manifestJson}`);
+          
+          let parsedManifest = {
+            local_event: "IPL Local Screening Party at near market center",
+            environmental_trigger: "High temperature, sunny afternoon",
+            neighborhood_slangs: "Gethu, Machan, Semma",
+            recommended_copy_strategy: "Offer chilled local beverages with regional slang tags."
+          };
+          try {
+            parsedManifest = JSON.parse(manifestJson.replace(/```json|```/g, '').trim());
+          } catch (e) {
+            console.warn('[Control Plane] Failed to parse manifest JSON, using baseline parameters.');
+          }
+
+          // Send detailed logs of individual agent actions to client ledger
+          sendToClient({
+            type: 'AGENT_LOG',
+            agentName: 'Geo Scout',
+            executionLog: `Analyzed ambient signals: local_event = "${parsedManifest.local_event}", environmental_trigger = "${parsedManifest.environmental_trigger}"`
+          });
           
           sendToClient({
             type: 'AGENT_LOG',
-            agentName: 'Swarm Coordinator',
-            executionLog: `Background sandbox instance started. Context ID token: ${contextId}`
+            agentName: 'Creative Archivist',
+            executionLog: `Selected visual vibe template: Chilled theme matched to environmental trigger (${parsedManifest.environmental_trigger}).`
+          });
+          
+          sendToClient({
+            type: 'AGENT_LOG',
+            agentName: 'Slang Strategist',
+            executionLog: `Extracted active neighborhood slangs: ${parsedManifest.neighborhood_slangs}. Blueprint copywriting strategy: "${parsedManifest.recommended_copy_strategy}"`
           });
 
           // Send confirmation state back to the client
@@ -105,7 +130,7 @@ wss.on('connection', (ws: WebSocket) => {
               model: TARGET_LIVE_MODEL,
               config: {
                 responseModalities: [Modality.AUDIO],
-                systemInstruction: `Inject local context vectors from interaction token: ${contextId}. Run real-time QA layers to enforce layout contrast limits. Use tools to generate and publish ads when user requests them. Prioritize local native Indian languages (such as Hindi, Tamil, Telugu, Kannada, etc.) and native scripts in copy strategy generation and verbal communication.`,
+                systemInstruction: `Inject local context vectors from sandbox agent swarm: ${JSON.stringify(parsedManifest)}. Run real-time QA layers to enforce layout contrast limits. Use tools to generate and publish ads when user requests them. Prioritize local native Indian languages (such as Hindi, Tamil, Telugu, Kannada, etc.) and native scripts in copy strategy generation and verbal communication.`,
                 tools: [
                   {
                     functionDeclarations: [

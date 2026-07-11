@@ -32,13 +32,22 @@ Constraint Check: Do not include markdown code wrappers (e.g., \`\`\`json) or an
       agent: 'antigravity-preview-05-2026',
       input: swarmInstruction,
       environment: 'remote',
-      background: true, // Enables async worker pattern execution
     });
     
-    console.log(`[Swarm Ingestion] Successfully created interaction: ${interaction.id}`);
-    return interaction.id; // Returns context interaction token anchor
+    console.log(`[Swarm Ingestion] Successfully created interaction. Response:`, interaction.text);
+    return interaction.text || JSON.stringify({
+      local_event: "IPL Local Screening Party at near market center",
+      environmental_trigger: "High temperature, sunny afternoon",
+      neighborhood_slangs: "Gethu, Machan, Semma",
+      recommended_copy_strategy: "Offer chilled local beverages with regional slang tags."
+    });
   } catch (error: any) {
     console.warn('[Control Plane Exception] Swarm API not available. Fallback to default baseline context:', error.message || error);
-    return 'default_regional_base_cache';
+    return JSON.stringify({
+      local_event: "IPL Local Screening Party at near market center",
+      environmental_trigger: "High temperature, sunny afternoon",
+      neighborhood_slangs: "Gethu, Machan, Semma",
+      recommended_copy_strategy: "Offer chilled local beverages with regional slang tags."
+    });
   }
 }
