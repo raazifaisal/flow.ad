@@ -7,6 +7,7 @@ interface BusinessProfile {
   merchantLocation: string;
   businessCategory: string;
   targetLanguage: string;
+  requestCasualVibe?: boolean; // Optional flag to enable slang/casual copywriting
 }
 
 interface SwarmResult {
@@ -48,34 +49,41 @@ export async function spawnContextIngestionSwarm(
   profile: BusinessProfile
 ): Promise<SwarmResult> {
   const defaultManifest = JSON.stringify({
-    local_event: "Weekend Bakery Sale",
-    environmental_trigger: "Breezy afternoon",
-    neighborhood_slangs: "Boss, Macha",
-    recommended_copy_strategy: `Fresh pastries and cakes at ${profile.businessName}!`
+    local_event: "Weekend Baking Specials",
+    environmental_trigger: "Breezy Bangalore weather",
+    neighborhood_slangs: "Macha, Boss",
+    recommended_copy_strategy: `Indulge in premium artisanal pastries and hot coffee at ${profile.businessName} today.`
   });
 
   try {
     const swarmInstruction = `
 Context Flag: System Container Initialization Engine
 Target Environment: Remote Linux Sandbox
-Core Task: Localized Trend and Vibe Analysis
+Core Task: Hyper-Local Trend, Vibe and Event Analysis
 
 Business Profile Context:
 - Business Name: ${profile.businessName}
 - Location: ${profile.merchantLocation}
 - Category: ${profile.businessCategory}
 - Target Language: ${profile.targetLanguage}
+- Request Casual Slang Tone: ${profile.requestCasualVibe ? "YES" : "NO"}
 
-You are an expert local market analyst. Use the google_search grounding tool to find the CURRENT weather conditions, active local events, and trending regional slangs in ${profile.merchantLocation} for today.
+You are an expert local market analyst. 
+1. Use the google_search grounding tool to find the CURRENT weather conditions and temperature in ${profile.merchantLocation} (Bengaluru) for today.
+2. Search specifically for active local events, fests, or community meetups happening TODAY within a 2km radius of SG Palya, Sadduguntepalya, or Koramangala. Restrict your queries/results using sources like Eventbrite, Reddit (e.g. r/bangalore), Meetup, and local listings. Do NOT return events far away (like Whitefield or JP Nagar).
+3. Extract 3 popular local slang words in ${profile.targetLanguage} matching this neighborhood.
+4. Synthesize this info and write a copywriting strategy:
+   - If the business is a classy brand (like a Patisserie, Boutique, Cafe) and "Request Casual Slang Tone" is NO, write an elegant, classy, premium, and sophisticated copywriting strategy. Do NOT inject street slang words in the copy.
+   - If "Request Casual Slang Tone" is YES, you may write a casual copy incorporating regional slang words naturally.
 
-Synthesize this info and output a raw JSON payload containing:
+Output only a raw JSON payload containing:
 {
-  "local_event": "A real event, festival, or holiday happening in the area today (based on search)",
-  "environmental_trigger": "Current real-time weather and temperature (based on search)",
-  "neighborhood_slangs": "3 popular local slang words in ${profile.targetLanguage} matching this neighborhood",
-  "recommended_copy_strategy": "A creative, short ad slogan in ${profile.targetLanguage} script incorporating the product and slang"
+  "local_event": "A highly localized event/fest/meetup happening within 2km of SG Palya/Koramangala/Sadduguntepalya today",
+  "environmental_trigger": "Current real-time weather and temperature",
+  "neighborhood_slangs": "The 3 neighborhood slang words detected",
+  "recommended_copy_strategy": "The tailored copywriting slogan (classy/premium by default, casual with slang only if requested)"
 }
-Output only the raw JSON. Do not include markdown code wrappers (e.g., \`\`\`json) or any conversational text.
+Do not include markdown code wrappers (e.g., \`\`\`json) or any conversational text.
 `;
 
     console.log('[Swarm Ingestion] Connecting to Interactions API...');
@@ -86,7 +94,6 @@ Output only the raw JSON. Do not include markdown code wrappers (e.g., \`\`\`jso
     });
 
     console.log(`[Swarm Ingestion] Successfully created interaction: ${interaction.id}`);
-    console.log('[Swarm Ingestion] Diagnostic keys:', Object.keys(interaction));
     
     const extractedText = extractTextFromInteraction(interaction);
     console.log('[Swarm Ingestion] Extracted manifest text:', extractedText);
@@ -115,10 +122,10 @@ export async function updateInteractionContext(
   profile: BusinessProfile
 ): Promise<string> {
   const defaultManifest = JSON.stringify({
-    local_event: "Weekend Bakery Sale",
-    environmental_trigger: "Breezy afternoon",
-    neighborhood_slangs: "Boss, Macha",
-    recommended_copy_strategy: `Fresh pastries and cakes at ${profile.businessName}!`
+    local_event: "Weekend Baking Specials",
+    environmental_trigger: "Breezy Bangalore weather",
+    neighborhood_slangs: "Macha, Boss",
+    recommended_copy_strategy: `Indulge in premium artisanal pastries and hot coffee at ${profile.businessName} today.`
   });
 
   try {
