@@ -46,12 +46,12 @@ const server = http.createServer((req, res) => {
     });
   } else {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('BharatFlow Engine HTTP Gateway');
+    res.end('flow.ad Engine HTTP Gateway');
   }
 });
 
 const wss = new WebSocketServer({ server });
-console.log(`[BharatFlow Gateway serving at ws://localhost:${PORT}]`);
+console.log(`[flow.ad Gateway serving at ws://localhost:${PORT}]`);
 console.log(`[Static ad creatives served at http://localhost:${PORT}/public/]`);
 
 wss.on('connection', (ws: WebSocket) => {
@@ -105,7 +105,7 @@ wss.on('connection', (ws: WebSocket) => {
               model: TARGET_LIVE_MODEL,
               config: {
                 responseModalities: [Modality.AUDIO],
-                systemInstruction: `Inject local context vectors from interaction token: ${contextId}. Run real-time QA layers to enforce layout contrast limits. Use tools to generate and publish ads when user requests them.`,
+                systemInstruction: `Inject local context vectors from interaction token: ${contextId}. Run real-time QA layers to enforce layout contrast limits. Use tools to generate and publish ads when user requests them. Prioritize local native Indian languages (such as Hindi, Tamil, Telugu, Kannada, etc.) and native scripts in copy strategy generation and verbal communication.`,
                 tools: [
                   {
                     functionDeclarations: [
@@ -199,7 +199,7 @@ wss.on('connection', (ws: WebSocket) => {
                             });
 
                             const imageResponse = await ai.models.generateImages({
-                              model: 'imagen-3.0-generate-002',
+                              model: 'gemini-3.1-flash-lite-image',
                               prompt: blueprintPrompt,
                               config: {
                                 numberOfImages: 1,

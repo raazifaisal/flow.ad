@@ -27,7 +27,7 @@ export async function publishToWhatsApp(adUrl: string): Promise<{ success: boole
         to: '+919999999999', // Target merchant or draft inbox
         type: 'template',
         template: {
-          name: 'bharatflow_ad_delivery',
+          name: 'flow_ad_delivery',
           language: { code: 'en' },
           components: [
             {
@@ -77,7 +77,7 @@ export async function publishToInstagram(adUrl: string): Promise<{ success: bool
       body: JSON.stringify({
         media_type: 'REELS',
         video_url: adUrl,
-        caption: 'New arrivals at your local store! Check us out. #hyperlocal #shopping #bharatflow',
+        caption: 'New arrivals at your local store! Check us out. #hyperlocal #shopping #flow_ad',
         share_to_feed: true
       })
     }).catch(() => {

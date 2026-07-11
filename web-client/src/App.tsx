@@ -238,7 +238,7 @@ export default function App() {
       <header className="glass" style={{ margin: '16px', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 100 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: runtimeState === 'STREAMING' ? '#06b6d4' : runtimeState === 'BARGE_IN_FREEZE' ? '#ef4444' : '#64748b', boxShadow: runtimeState === 'STREAMING' ? '0 0 10px #06b6d4' : 'none' }}></div>
-          <h1 style={{ fontSize: '20px', fontWeight: 600, letterSpacing: '-0.5px', margin: 0 }}>BHARATFLOW ENGINE</h1>
+          <h1 style={{ fontSize: '20px', fontWeight: 600, letterSpacing: '-0.5px', margin: 0 }}>FLOW.AD ENGINE</h1>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-secondary)' }}>
