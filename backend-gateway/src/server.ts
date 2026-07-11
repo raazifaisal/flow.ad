@@ -240,7 +240,7 @@ wss.on('connection', (ws: WebSocket) => {
                             });
 
                             const updateInstruction = `User requested creative generation. Focus Product: ${args.focus_product}, Background Color: ${args.background_color}, Overriding Copy: ${args.text_copy || 'None'}. Update design blueprint in session_manifest.json.`;
-                            const updatedManifestJson = await updateInteractionContext(currentInteractionId, updateInstruction);
+                            const updatedManifestJson = await updateInteractionContext(currentInteractionId, updateInstruction, businessProfile);
                             console.log(`[Control Plane Swarm] Updated manifest: ${updatedManifestJson}`);
 
                             let updatedManifest = parsedManifest;

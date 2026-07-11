@@ -7,6 +7,12 @@ interface BusinessProfile {
   merchantLocation: string;
   businessCategory: string;
   targetLanguage: string;
+  mockContext?: {
+    local_event: string;
+    environmental_trigger: string;
+    neighborhood_slangs: string;
+    recommended_copy_strategy: string;
+  };
 }
 
 interface SwarmResult {
@@ -26,24 +32,25 @@ function withTimeout(promise: Promise<any>, ms: number, timeoutError: Error): Pr
 
 /**
  * Control Plane Architecture: Initializes a stateful sandbox interaction thread
- * and runs Agent A, B, and C with a resilient 8-second timeout guard.
+ * and runs Agent A, B, and C with a resilient 45-second timeout guard.
+ * Fallbacks are dynamically loaded from the mock profile JSON.
  */
 export async function spawnContextIngestionSwarm(
   sessionId: string,
   profile: BusinessProfile
 ): Promise<SwarmResult> {
   const defaultManifest = JSON.stringify({
-    local_event: "IPL Local Screening Party at Malleshwaram Stadium",
-    environmental_trigger: "High temperature, sunny afternoon (32°C)",
-    neighborhood_slangs: "Guru, Sakkath, Bombaat",
-    recommended_copy_strategy: `Offer chilled fresh coconut water at ${profile.businessName} with localized script: 'Sakkath Sweet ಎಳನೀರು!'`
+    local_event: profile.mockContext?.local_event || "Local Market Sale",
+    environmental_trigger: profile.mockContext?.environmental_trigger || "Sunny weather",
+    neighborhood_slangs: profile.mockContext?.neighborhood_slangs || "None",
+    recommended_copy_strategy: profile.mockContext?.recommended_copy_strategy || `Visit ${profile.businessName} today!`
   });
 
   try {
     const swarmInstruction = `
 Context Flag: System Container Initialization Engine
 Target Environment: Remote Linux Sandbox
-Core Task: Multi-Agent Localized Trend Analysis
+Core Task: Localized Trend and Vibe Analysis
 
 Business Profile Context:
 - Business Name: ${profile.businessName}
@@ -51,17 +58,16 @@ Business Profile Context:
 - Category: ${profile.businessCategory}
 - Target Language: ${profile.targetLanguage}
 
-You are the Federated Swarm Coordinator governing three internal execution tasks. You have access to the google_search grounding tool. Read and write your progress parameters to the shared memory object 'session_manifest.json'.
+You are an expert local market analyst. Use the google_search grounding tool to find the CURRENT weather conditions, active local events, and trending regional slangs in ${profile.merchantLocation} for today.
 
-Perform the following system iterations:
-1. Initialize Agent A (The Geo Scout): Query the search tool using the merchant location: ${profile.merchantLocation}. Identify immediate local events, college festivals, neighborhood sports matches, and localized weather fluctuations happening within a 2-kilometer grid today.
-2. Initialize Agent B (The Creative Archivist): Analyze Agent A's findings. Synthesize the optimal design theme, color palettes, and visual layout instructions dynamically using world knowledge matching the current environmental vibe and target product category: ${profile.businessCategory}.
-3. Initialize Agent C (The Slang Strategist): Scan nearby public business markers and social feeds around ${profile.merchantLocation}. Extract highly active regional slangs, localized keywords, and popular idioms unique to this specific market zone matching target language: ${profile.targetLanguage}.
-
-Consolidate all values into a single, clean JSON string containing exclusively the keys:
-'local_event', 'environmental_trigger', 'neighborhood_slangs', and 'recommended_copy_strategy'.
-
-Constraint Check: Do not include markdown code wrappers (e.g., \`\`\`json) or any conversational text strings. Output only the raw valid JSON payload.
+Synthesize this info and output a raw JSON payload containing:
+{
+  "local_event": "A real event, festival, or holiday happening in the area today (based on search)",
+  "environmental_trigger": "Current real-time weather and temperature (based on search)",
+  "neighborhood_slangs": "3 popular local slang words in ${profile.targetLanguage} matching this neighborhood",
+  "recommended_copy_strategy": "A creative, short ad slogan in ${profile.targetLanguage} script incorporating the product and slang"
+}
+Output only the raw JSON. Do not include markdown code wrappers (e.g., \`\`\`json) or any conversational text.
 `;
 
     console.log('[Swarm Ingestion] Connecting to Interactions API...');
@@ -71,10 +77,9 @@ Constraint Check: Do not include markdown code wrappers (e.g., \`\`\`json) or an
       environment: 'remote',
     });
 
-    // Enforce an 8-second execution limit for the remote sandbox to prevent connection hangs
     const interaction = await withTimeout(
       interactionPromise,
-      8000,
+      45000,
       new Error('Interactions API request timed out')
     );
 
@@ -94,17 +99,18 @@ Constraint Check: Do not include markdown code wrappers (e.g., \`\`\`json) or an
 }
 
 /**
- * Appends context updates to the existing stateful interaction thread in the sandbox with an 8-second timeout guard.
+ * Appends context updates to the existing stateful interaction thread in the sandbox with a 25-second timeout guard.
  */
 export async function updateInteractionContext(
   interactionId: string,
-  inputUpdate: string
+  inputUpdate: string,
+  profile: BusinessProfile
 ): Promise<string> {
   const defaultManifest = JSON.stringify({
-    local_event: "IPL Local Screening Party at Malleshwaram Stadium",
-    environmental_trigger: "High temperature, sunny afternoon (32°C)",
-    neighborhood_slangs: "Guru, Sakkath, Bombaat",
-    recommended_copy_strategy: "Offer chilled fresh coconut water with local slang tags."
+    local_event: profile.mockContext?.local_event || "Local Market Sale",
+    environmental_trigger: profile.mockContext?.environmental_trigger || "Sunny weather",
+    neighborhood_slangs: profile.mockContext?.neighborhood_slangs || "None",
+    recommended_copy_strategy: profile.mockContext?.recommended_copy_strategy || `Visit ${profile.businessName} today!`
   });
 
   try {
@@ -119,7 +125,7 @@ export async function updateInteractionContext(
 
     const interaction = await withTimeout(
       interactionPromise,
-      8000,
+      25000,
       new Error('Interaction update request timed out')
     );
 
