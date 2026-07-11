@@ -35,18 +35,8 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   /* Data */
-  const [msgs, setMsgs] = useState<ChatMsg[]>([
-    { id: 'm0', sender: 'user', text: 'Generate an ad for tonight — closest bakery to my location.' },
-    {
-      id: 'm1', sender: 'ai', text: "I found great options near you! Here's a quick ad preview:", gallery: [
-        'https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=200&q=60',
-        'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=200&q=60',
-        'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=200&q=60',
-      ]
-    },
-    { id: 'm2', sender: 'user', text: 'Make it more festive for IPL night.' },
-    { id: 'm3', sender: 'ai', text: 'Done! Swarm synced to IPL Hype vibe 🏏 — copy updated with local slang for your neighbourhood.' },
-  ]);
+  const [msgs, setMsgs] = useState<ChatMsg[]>([]);
+  const [wsUrlOverride, setWsUrlOverride] = useState<string>(() => localStorage.getItem('ws_url_override') || '');
   const [logs, setLogs] = useState<LedgerEntry[]>([]);
   const [profile, setProfile] = useState({
     businessName: 'zaid patisserie',
@@ -138,9 +128,14 @@ export default function App() {
     if (!checkMediaSupport()) return;
     if (wsRef.current) endSession();
     setConnState('CONNECTING');
-    addLog('Meta Orchestrator', 'Connecting to Twin-Plane Gateway...');
-    const wsUrl = `ws://${window.location.hostname}:50051`;
-    const ws = new WebSocket(wsUrl);
+
+    // Choose WebSocket protocol dynamically (wss:// if secure, ws:// otherwise)
+    const defaultWsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const defaultWsUrl = `${defaultWsProtocol}//${window.location.hostname}:50051`;
+    const finalWsUrl = wsUrlOverride.trim() || defaultWsUrl;
+
+    addLog('Meta Orchestrator', `Connecting to Twin-Plane Gateway at ${finalWsUrl}...`);
+    const ws = new WebSocket(finalWsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -558,6 +553,19 @@ export default function App() {
               <div className="field-input" style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.7, height: 'auto' }}>
                 {manifest.local_event} · {manifest.neighborhood_slangs}
               </div>
+            </div>
+            <div className="field-group">
+              <label className="field-label">WebSocket Gateway URL (Optional Override)</label>
+              <input
+                className="field-input"
+                placeholder="e.g. wss://your-ngrok-url.ngrok-free.app or ws://192.168.x.x:50051"
+                value={wsUrlOverride}
+                disabled={isLive}
+                onChange={e => {
+                  setWsUrlOverride(e.target.value);
+                  localStorage.setItem('ws_url_override', e.target.value);
+                }}
+              />
             </div>
           </div>
         </div>

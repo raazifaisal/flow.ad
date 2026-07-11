@@ -2,6 +2,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { GoogleGenAI, Modality, Type } from '@google/genai';
 import dotenv from 'dotenv';
 import http from 'http';
+import https from 'https';
 import fs from 'fs';
 import path from 'path';
 import { spawnContextIngestionSwarm, updateInteractionContext, fetchReferenceAds } from './swarm';
@@ -29,8 +30,8 @@ if (!fs.existsSync(publicDir)) {
   fs.mkdirSync(publicDir, { recursive: true });
 }
 
-// Create an HTTP Server to handle static file serving and upgrade to WS
-const server = http.createServer((req, res) => {
+// Create the handler for static file serving and basic routes
+const serverHandler = (req: http.IncomingMessage, res: http.ServerResponse) => {
   if (req.url?.startsWith('/public/')) {
     const filename = path.basename(req.url);
     const filePath = path.join(publicDir, filename);
@@ -46,13 +47,30 @@ const server = http.createServer((req, res) => {
     });
   } else {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('flow.ad Engine HTTP Gateway');
+    res.end('flow.ad Engine Gateway');
   }
-});
+};
+
+let server: http.Server | https.Server;
+const keyPath = path.join(__dirname, '../key.pem');
+const certPath = path.join(__dirname, '../cert.pem');
+let isSecure = false;
+
+if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+  console.log('[SOTA Live Server] SSL Certificates found. Running secure HTTPS/WSS server.');
+  server = https.createServer({
+    key: fs.readFileSync(keyPath),
+    cert: fs.readFileSync(certPath)
+  }, serverHandler);
+  isSecure = true;
+} else {
+  console.log('[SOTA Live Server] No SSL Certificates found. Running fallback HTTP/WS server.');
+  server = http.createServer(serverHandler);
+}
 
 const wss = new WebSocketServer({ server });
-console.log(`[flow.ad Gateway serving at ws://localhost:${PORT}]`);
-console.log(`[Static ad creatives served at http://localhost:${PORT}/public/]`);
+console.log(`[flow.ad Gateway serving at ${isSecure ? 'wss' : 'ws'}://localhost:${PORT}]`);
+console.log(`[Static ad creatives served at ${isSecure ? 'https' : 'http'}://localhost:${PORT}/public/]`);
 
 wss.on('connection', (ws: WebSocket) => {
   let liveSession: any = null;
