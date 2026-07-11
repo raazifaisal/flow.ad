@@ -1,0 +1,62 @@
+# Node.js / TypeScript
+node_modules/
+dist/
+lib-cov/
+deps/
+.usr/
+*.css.map
+*.spec.js
+.npm
+.eslintcache
+.stylelintcache
+.node_repl_history
+*.tgz
+.yarn-clean
+.yarn/
+.pnpm-store/
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# IDE / Editor config
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.classpath
+.project
+.settings/
+*.launch
+.factorypath
+.metadata
+
+# System Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# React Native / Mobile build folders
+ios/Pods/
+ios/build/
+android/app/build/
+android/.gradle/
+android/local.properties
+.expo/
+web-build/
