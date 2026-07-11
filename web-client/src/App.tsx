@@ -123,7 +123,8 @@ export default function App() {
     if (wsRef.current) endSession();
     setConnState('CONNECTING');
     addLog('Meta Orchestrator', 'Connecting to Twin-Plane Gateway...');
-    const ws = new WebSocket('ws://localhost:50051');
+    const wsUrl = `ws://${window.location.hostname}:50051`;
+    const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
