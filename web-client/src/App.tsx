@@ -1,705 +1,545 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Play,
-  Square,
-  Video,
-  Terminal,
-  Share2,
-  ExternalLink,
-  Zap,
-  Sparkles,
-  Volume2
+  Mic, MicOff, Video, VideoOff, PhoneOff, Phone,
+  Settings, AlignLeft, Sparkles, Send, X, Zap,
+  Info
 } from 'lucide-react';
 import audioService from './services/audioService';
 
-interface LedgerEntry {
-  id: string;
-  timestamp: string;
-  agentName: string;
-  message: string;
-}
-
-type EngineState = 'DISCONNECTED' | 'CONNECTED' | 'STREAMING' | 'BARGE_IN_FREEZE' | 'CREATIVE_PROCESSING';
+/* ─── Types ─────────────────────────────────────────────── */
+interface LedgerEntry { id: string; agentName: string; message: string; timestamp: string; }
+interface ChatMsg { id: string; sender: 'user' | 'ai'; text: string; gallery?: string[]; }
+type State = 'IDLE' | 'CONNECTING' | 'STREAMING' | 'BARGE_IN';
 
 export default function App() {
-  const [runtimeState, setRuntimeState] = useState<EngineState>('DISCONNECTED');
-  const [adUrl, setAdUrl] = useState<string | null>(null);
-  const [stillAdUrl, setStillAdUrl] = useState<string | null>(null);
-  const [cinematicAdUrl, setCinematicAdUrl] = useState<string | null>(null);
-  const [keyframes, setKeyframes] = useState<string[]>([]);
-  const [activeKeyframeIndex, setActiveKeyframeIndex] = useState<number>(0);
-  const [activeCreativeTab, setActiveCreativeTab] = useState<'still' | 'motion' | 'cinematic'>('still');
-  const [ledger, setLedger] = useState<LedgerEntry[]>([]);
-  const [sessionId] = useState<string>(() => `session_${Date.now()}`);
-  const [textCommand, setTextCommand] = useState<string>('');
+  /* ── State ───────────────────────────────────────────── */
+  const [connState, setConnState] = useState<State>('IDLE');
+  const [micOn, setMicOn] = useState(true);
+  const [camOn, setCamOn] = useState(false);
+  const [input, setInput] = useState('');
+  const [typing, setTyping] = useState(false);
+  const [permError, setPermError] = useState<string | null>(null);
 
+  /* Modals */
+  const [logsOpen, setLogsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  /* Data */
+  const [msgs, setMsgs] = useState<ChatMsg[]>([]);
+  const [wsUrlOverride, setWsUrlOverride] = useState<string>(() => localStorage.getItem('ws_url_override') || '');
+  const [logs, setLogs] = useState<LedgerEntry[]>([]);
+
+  // Business profile — starts empty, populated by BUSINESS_CONFIRMED from server
+  const [profile, setProfile] = useState({
+    businessName: '',
+    merchantLocation: '',
+    businessCategory: '',
+  });
+
+  /* Refs */
   const wsRef = useRef<WebSocket | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const feedEnd = useRef<HTMLDivElement>(null);
+  const sessionId = useRef(`s_${Date.now()}`);
 
-  const sendTextCommand = () => {
-    if (!textCommand.trim()) return;
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      appendLedger('You (Text Command)', textCommand);
-      wsRef.current.send(
-        JSON.stringify({
-          type: 'TEXT_INPUT',
-          text: textCommand
-        })
-      );
-      setTextCommand('');
-    } else {
-      appendLedger('System Controller', 'Cannot send command. Live Session is disconnected.');
+  /* ── Auto scroll ─────────────────────────────────────── */
+  useEffect(() => { feedEnd.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs, typing]);
+
+  /* ── Camera ──────────────────────────────────────────── */
+  useEffect(() => {
+    if (camOn) startCam(); else stopCam();
+    return stopCam;
+  }, [camOn]);
+
+  const startCam = async () => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setCamOn(false);
+      setPermError('Camera requires a secure context (HTTPS) to function. Please access using "https://<your-local-ip>:5173" on your phone.');
+      return;
     }
-  };
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const ledgerEndRef = useRef<HTMLDivElement | null>(null);
-  const [cameraActive, setCameraActive] = useState<boolean>(false);
-
-  // Setup video stream on component load
-  useEffect(() => {
-    enableCamera();
-    return () => {
-      disableCamera();
-      disconnectSession();
-    };
-  }, []);
-
-  // Auto-scroll ledger to bottom when new entries arrive
-  useEffect(() => {
-    ledgerEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [ledger]);
-
-  // Loop through keyframes for cinematic ad preview cross-fade simulation
-  useEffect(() => {
-    if (activeCreativeTab !== 'cinematic' || keyframes.length === 0) return;
-    const interval = setInterval(() => {
-      setActiveKeyframeIndex((prev) => (prev + 1) % keyframes.length);
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [activeCreativeTab, keyframes]);
-
-  const enableCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: 640, height: 480 },
-        audio: false
-      });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        setCameraActive(true);
-      }
-    } catch (err) {
-      console.error('[Web Viewfinder] Camera access failed:', err);
-      appendLedger('System Controller', 'Viewfinder camera permission denied.');
+      const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+      if (videoRef.current) videoRef.current.srcObject = s;
+      setPermError(null);
+    } catch (err: any) {
+      setCamOn(false);
+      if (err.name === 'NotAllowedError')
+        setPermError('Camera access denied. Allow camera in your browser settings.');
+      else if (err.name === 'NotFoundError')
+        setPermError('No camera found on this device.');
+      else
+        setPermError('Camera error: ' + err.message);
     }
   };
-
-  const disableCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach(track => track.stop());
+  const stopCam = () => {
+    if (videoRef.current?.srcObject) {
+      (videoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
       videoRef.current.srcObject = null;
-      setCameraActive(false);
     }
   };
 
-  const appendLedger = (agentName: string, message: string) => {
-    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    setLedger(prev => [
-      ...prev,
-      {
-        id: Math.random().toString(36).substr(2, 9),
-        timestamp: time,
-        agentName,
-        message
-      }
-    ]);
+  /* ── Log helper ──────────────────────────────────────── */
+  const addLog = (agentName: string, message: string) => {
+    const ts = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    setLogs(p => [...p, { id: Math.random().toString(36).slice(2), agentName, message, timestamp: ts }]);
   };
 
-  const initializeSession = () => {
-    disconnectSession();
-    setRuntimeState('CONNECTED');
-    setLedger([]);
-    setAdUrl(null);
+  const checkMediaSupport = (): boolean => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setPermError('Microphone requires a secure context (HTTPS) to function. Please access using "https://<your-local-ip>:5173" on your phone.');
+      return false;
+    }
+    return true;
+  };
 
-    appendLedger('Meta Orchestrator', 'Initializing Live Agent WebSocket session...');
-    const ws = new WebSocket('ws://localhost:50051');
+  const requestPermissions = async () => {
+    try {
+      addLog('System', 'Proactively requesting microphone and camera permissions...');
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      // Stop the tracks immediately after receiving permission so we don't leave the camera on
+      stream.getTracks().forEach(track => track.stop());
+      setPermError(null);
+      addLog('System', 'Permissions granted successfully!');
+      // Trigger camera if it was toggled on
+      if (camOn) startCam();
+    } catch (err: any) {
+      console.warn('Proactive permissions failed:', err);
+      setPermError('Microphone/Camera permission required. Please click the lock 🔒 icon in your browser address bar and allow permissions.');
+    }
+  };
+
+  /* ── WebSocket ───────────────────────────────────────── */
+  const startSession = () => {
+    if (!checkMediaSupport()) return;
+    if (wsRef.current) endSession();
+    setConnState('CONNECTING');
+
+    // Reset profile for new session
+    setProfile({ businessName: '', merchantLocation: '', businessCategory: '' });
+
+    // Choose WebSocket protocol dynamically (wss:// if secure, ws:// otherwise)
+    const defaultWsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const defaultWsUrl = `${defaultWsProtocol}//${window.location.hostname}:50051`;
+    const finalWsUrl = wsUrlOverride.trim() || defaultWsUrl;
+
+    addLog('Meta Orchestrator', `Connecting to Live-first Gateway at ${finalWsUrl}...`);
+    const ws = new WebSocket(finalWsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      appendLedger('Meta Orchestrator', 'WebSocket Gateway link active.');
-      // Send session init signal
-      ws.send(
-        JSON.stringify({
-          type: 'INIT_SESSION',
-          sessionId: sessionId
-        })
-      );
+      setConnState('STREAMING');
+      addLog('Gateway', 'Connected. Starting cold-start conversational boot...');
+      // Send minimal INIT_SESSION — no businessProfile payload
+      ws.send(JSON.stringify({ type: 'INIT_SESSION', sessionId: sessionId.current }));
     };
-
-    ws.onmessage = async (event) => {
+    ws.onmessage = (ev) => {
       try {
-        const message = JSON.parse(event.data);
-
-        switch (message.type) {
-          case 'STATE_MUTATION':
-            setRuntimeState(message.state);
-            appendLedger('System Gateway', `Transitioned to state: ${message.state}`);
-
-            if (message.state === 'BARGE_IN_FREEZE') {
-              audioService.flushPlayback();
-              appendLedger('Voice Engine', 'User Barge-In detected. Clearing audio play buffers instantly.');
-              // Reset back to streaming shortly
-              setTimeout(() => {
-                setRuntimeState('STREAMING');
-              }, 1500);
+        const msg = JSON.parse(ev.data);
+        if (msg.type === 'AUDIO_OUTPUT' && msg.audio) {
+          audioService.playChunk(msg.audio);
+        } else if (msg.type === 'STATE_MUTATION') {
+          if (msg.state === 'BARGE_IN_FREEZE') {
+            setConnState('BARGE_IN');
+            audioService.flushPlayback();
+            setTimeout(() => setConnState('STREAMING'), 1500);
+          } else setConnState(msg.state === 'STREAMING' ? 'STREAMING' : 'IDLE');
+          addLog('System Gateway', `State → ${msg.state}`);
+        } else if (msg.type === 'TRANSCRIPT' && msg.transcript) {
+          // Surface Live conversation text in the chat feed
+          setTyping(false);
+          setMsgs(p => [...p, {
+            id: `${msg.sender}_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+            sender: msg.sender || 'ai',
+            text: msg.transcript
+          }]);
+        } else if (msg.type === 'BUSINESS_CONFIRMED' && msg.businessProfile) {
+          // Server confirmed business identity — populate profile display
+          setProfile({
+            businessName: msg.businessProfile.businessName,
+            merchantLocation: msg.businessProfile.merchantLocation,
+            businessCategory: msg.businessProfile.businessCategory,
+          });
+          addLog('Discovery Agent', `Business confirmed: "${msg.businessProfile.businessName}" at ${msg.businessProfile.merchantLocation}`);
+        } else if (msg.type === 'AGENT_LOG' && msg.agentName) {
+          addLog(msg.agentName, msg.executionLog);
+        } else if (msg.type === 'AD_PREVIEW') {
+          setTyping(false);
+          const gallery = msg.stillUrl
+            ? [msg.stillUrl, msg.cinematicUrl, ...(msg.keyframes || [])].filter(Boolean)
+            : (msg.url ? [msg.url] : []);
+          setMsgs(p => [
+            ...p,
+            {
+              id: `ai_preview_${Date.now()}`,
+              sender: 'ai',
+              text: `Creative assets compiled! High-resolution Still (1:1) and Cinematic vertical (9:16) motion video are ready for review.`,
+              gallery: gallery
             }
-            break;
-
-          case 'AUDIO_OUTPUT':
-            if (message.audio) {
-              audioService.playChunk(message.audio);
-            }
-            break;
-
-          case 'AD_PREVIEW':
-            if (message.stillUrl) {
-              setStillAdUrl(message.stillUrl);
-              setCinematicAdUrl(message.cinematicUrl || null);
-              setKeyframes(message.keyframes || []);
-              setActiveKeyframeIndex(0);
-              setAdUrl(message.stillUrl);
-              setActiveCreativeTab('still');
-              setRuntimeState('CREATIVE_PROCESSING');
-              appendLedger('Creative Director', `New dynamic ad asset compiled (Still & Cinematic formats): ${message.stillUrl}`);
-            } else if (message.url) {
-              setStillAdUrl(message.url);
-              setAdUrl(message.url);
-              setKeyframes([]);
-              setActiveKeyframeIndex(0);
-              setActiveCreativeTab('still');
-              setRuntimeState('CREATIVE_PROCESSING');
-              appendLedger('Creative Director', `New dynamic ad asset compiled: ${message.url}`);
-            }
-            break;
-
-          case 'AGENT_LOG':
-            if (message.agentName && message.executionLog) {
-              appendLedger(message.agentName, message.executionLog);
-            }
-            break;
+          ]);
+          addLog('Creative Director', `New dynamic ad assets compiled successfully.`);
         }
-      } catch (err) {
-        console.error('[Web App] WebSocket message error:', err);
-      }
+      } catch { }
     };
-
-    ws.onerror = (err) => {
-      console.error('[Web App] WebSocket connection error:', err);
-      appendLedger('System Gateway', 'WebSocket error encountered.');
-      setRuntimeState('DISCONNECTED');
-    };
-
-    ws.onclose = () => {
-      appendLedger('Meta Orchestrator', 'WebSocket session closed.');
-      setRuntimeState('DISCONNECTED');
-    };
+    ws.onerror = () => { setConnState('IDLE'); addLog('System', 'WebSocket error.'); };
+    ws.onclose = () => { setConnState('IDLE'); addLog('System', 'Session closed.'); };
   };
 
-  const disconnectSession = () => {
+  const endSession = () => {
     audioService.stopRecording();
     audioService.flushPlayback();
-
-    if (wsRef.current) {
-      try {
-        wsRef.current.send(JSON.stringify({ type: 'USER_CANCEL' }));
-      } catch (e) { }
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-    setRuntimeState('DISCONNECTED');
+    try { wsRef.current?.send(JSON.stringify({ type: 'USER_CANCEL' })); } catch { }
+    wsRef.current?.close();
+    wsRef.current = null;
+    setConnState('IDLE');
   };
 
-  const toggleStream = async () => {
-    if (runtimeState === 'DISCONNECTED') {
-      initializeSession();
+  /* ── Mic ─────────────────────────────────────────────── */
+  useEffect(() => {
+    if (connState === 'STREAMING' && micOn) {
+      (async () => {
+        try {
+          await audioService.startRecording((chunk: string) => {
+            if (wsRef.current?.readyState === WebSocket.OPEN)
+              wsRef.current.send(JSON.stringify({ type: 'AUDIO_INPUT', audio: chunk }));
+          });
+          setPermError(null);
+        } catch (err: any) {
+          // Surface the error in the UI banner
+          if (err.name === 'InsecureContextError') {
+            setPermError('Microphone requires HTTPS. Open the https:// URL on your phone (accept the certificate warning).');
+          } else if (err.name === 'NotAllowedError') {
+            setPermError('Microphone access denied. Tap the 🔒 icon in your browser address bar and allow Microphone.');
+          } else if (err.name === 'NotFoundError') {
+            setPermError('No microphone found on this device.');
+          } else {
+            setPermError('Microphone error: ' + (err.message || err.name));
+          }
+          setMicOn(false);
+          endSession();
+        }
+      })();
     } else {
-      disconnectSession();
-    }
-  };
-
-  // Capture video frame at 1 FPS and stream to backend
-  useEffect(() => {
-    if (runtimeState !== 'STREAMING' || !cameraActive) return;
-
-    const interval = setInterval(() => {
-      if (videoRef.current && canvasRef.current && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        const video = videoRef.current;
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
-
-        if (ctx) {
-          // Draw video frame to hidden canvas
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          // Export as base64 JPEG
-          const base64Image = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
-
-          wsRef.current.send(
-            JSON.stringify({
-              type: 'VIDEO_INPUT',
-              image: base64Image
-            })
-          );
-        }
-      }
-    }, 1000); // 1 FPS
-
-    return () => clearInterval(interval);
-  }, [runtimeState, cameraActive]);
-
-  // Start microphone recording when streaming
-  useEffect(() => {
-    if (runtimeState === 'STREAMING') {
-      audioService.startRecording((chunk: string) => {
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-          wsRef.current.send(
-            JSON.stringify({
-              type: 'AUDIO_INPUT',
-              audio: chunk
-            })
-          );
-        }
-      });
-      appendLedger('Voice Controller', 'Local microphone stream open (16kHz PCM).');
-    } else if (runtimeState !== 'BARGE_IN_FREEZE') {
       audioService.stopRecording();
     }
-  }, [runtimeState]);
+  }, [connState, micOn]);
 
+
+  /* ── Video frames ────────────────────────────────────── */
+  useEffect(() => {
+    if (connState !== 'STREAMING' || !camOn) return;
+    const iv = setInterval(() => {
+      const v = videoRef.current, c = canvasRef.current;
+      if (!v || !c || wsRef.current?.readyState !== WebSocket.OPEN) return;
+      const ctx = c.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(v, 0, 0, c.width, c.height);
+      wsRef.current.send(JSON.stringify({ type: 'VIDEO_INPUT', image: c.toDataURL('image/jpeg', 0.6).split(',')[1] }));
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [connState, camOn]);
+
+  /* ── Send text message ───────────────────────────────── */
+  const sendMsg = () => {
+    const txt = input.trim();
+    if (!txt) return;
+    setInput('');
+    setTyping(true);
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      // Text is sent to server which routes to Live and echoes back as TRANSCRIPT
+      wsRef.current.send(JSON.stringify({ type: 'TEXT_INPUT', text: txt }));
+    } else {
+      // Not connected — show offline message
+      setMsgs(p => [...p, { id: `u_${Date.now()}`, sender: 'user', text: txt }]);
+      setTimeout(() => {
+        setTyping(false);
+        setMsgs(p => [...p, {
+          id: `ai_${Date.now()}`, sender: 'ai',
+          text: `Start a live session first — tap the phone icon to connect.`
+        }]);
+      }, 900);
+    }
+  };
+
+  /* ── Log category ────────────────────────────────────── */
+  const logClass = (a: string) =>
+    a.includes('Swarm') || a.includes('Creative') ? 'swarm' :
+      a.includes('Voice') || a.includes('Audio') ? 'voice' : 'system';
+
+  const isLive = connState !== 'IDLE';
+  const isMicLive = isLive && micOn;
+
+  /* ═══════════════════════════════════════════════════════
+     RENDER
+  ═══════════════════════════════════════════════════════ */
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', flexDirection: 'column' }}>
-      {/* Top Header Navigation bar */}
-      <header className="glass" style={{ margin: '16px', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 100 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: runtimeState === 'STREAMING' ? '#06b6d4' : runtimeState === 'BARGE_IN_FREEZE' ? '#ef4444' : '#64748b', boxShadow: runtimeState === 'STREAMING' ? '0 0 10px #06b6d4' : 'none' }}></div>
-          <h1 style={{ fontSize: '20px', fontWeight: 600, letterSpacing: '-0.5px', margin: 0 }}>FLOW.AD ENGINE</h1>
+    <div className="app">
+
+      {/* ── Header ── */}
+      <header className="header">
+        <div className="header-brand">
+          <div className="header-logo">
+            <Sparkles size={16} />
+          </div>
+          <span className="header-name">flow.ad</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-secondary)' }}>
-            STATUS: <span style={{ color: runtimeState === 'STREAMING' ? 'var(--color-cyan)' : runtimeState === 'BARGE_IN_FREEZE' ? 'var(--color-red)' : 'var(--text-muted)' }}>{runtimeState}</span>
-          </span>
+
+        <div className="header-right">
+          {isLive && (
+            <div className="live-badge">
+              <span className="live-dot" />
+              {connState === 'BARGE_IN' ? 'BARGE-IN' : 'LIVE'}
+            </div>
+          )}
+          <button className="icon-btn" onClick={() => { setSettingsOpen(true); setLogsOpen(false); }} aria-label="Settings">
+            <Settings size={18} />
+          </button>
+          <button className="icon-btn" onClick={() => { setLogsOpen(true); setSettingsOpen(false); }} aria-label="Ledger">
+            <AlignLeft size={18} />
+          </button>
         </div>
       </header>
 
-      {/* Main Workspace Layout */}
-      <main style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 400px', gap: '20px', padding: '0 16px 16px', overflow: 'hidden' }}>
-
-        {/* Left Side: Live Spatial Viewport Camera Feed */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', position: 'relative' }}>
-          <div
-            className={`glass-dark ${runtimeState === 'STREAMING' ? 'active-viewport' : runtimeState === 'BARGE_IN_FREEZE' ? 'barge-in-viewport' : ''}`}
-            style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', justifyContent: 'center', alignItems: 'center', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.08)' }}
-          >
-            {/* Native HTML5 Video Element representing camera viewport */}
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }}
-            />
-
-            {/* Hidden canvas for capturing video frames */}
-            <canvas ref={canvasRef} width="640" height="480" style={{ display: 'none' }} />
-
-            {/* Neon Scanning line when active */}
-            {runtimeState === 'STREAMING' && <div className="scanner" style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }} />}
-
-            {/* Viewport UI Overlays */}
-            <div style={{ position: 'absolute', top: '20px', left: '20px', display: 'flex', gap: '10px' }}>
-              <span className="glass" style={{ padding: '6px 12px', fontSize: '11px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}>
-                <Video size={12} color="#06b6d4" />
-                SPATIAL VIEWPORT ACTIVE (1 FPS)
-              </span>
-              {runtimeState === 'STREAMING' && (
-                <span className="glass" style={{ padding: '6px 12px', fontSize: '11px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}>
-                  <Volume2 size={12} color="#06b6d4" />
-                  AUDIO FEED BACKEND
-                </span>
-              )}
-            </div>
-
-            {/* Barge-In Interruption Neon Overlay Flash */}
-            {runtimeState === 'BARGE_IN_FREEZE' && (
-              <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(239, 68, 68, 0.15)', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', animation: 'pulse 1s infinite' }}>
-                <Zap size={64} color="var(--color-red)" style={{ filter: 'drop-shadow(0 0 15px var(--color-red))', marginBottom: '16px' }} />
-                <span style={{ fontSize: '24px', fontWeight: 700, color: 'var(--color-red)', letterSpacing: '2px', textShadow: '0 0 10px rgba(239,68,68,0.5)' }}>
-                  USER INTERRUPT / BARGE-IN
-                </span>
-                <span style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '8px' }}>
-                  Flushing audio channels and updating instructions...
-                </span>
-              </div>
-            )}
-
-            {/* Empty camera prompt */}
-            {!cameraActive && (
-              <div style={{ position: 'absolute', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
-                <Video size={48} color="var(--text-muted)" />
-                <button onClick={enableCamera} className="glass" style={{ padding: '10px 20px', color: '#fff', cursor: 'pointer' }}>
-                  Enable Viewfinder Camera
-                </button>
-              </div>
-            )}
-
-            {/* Overlay Status Bar */}
-            <div style={{ position: 'absolute', bottom: '24px', left: '24px', right: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div className="glass" style={{ padding: '12px 20px', display: 'flex', alignItems: 'center', gap: '16px', border: '1px solid rgba(255,255,255,0.15)' }}>
-                <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-                  Active Agent Node:
-                </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: runtimeState === 'STREAMING' ? '#10b981' : '#64748b' }}></div>
-                  <span style={{ fontWeight: 600, fontSize: '13px', color: '#fff' }}>
-                    {runtimeState === 'STREAMING' ? 'Gemini 3.1 Live Engine' : 'Idle'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Dynamic waveform simulation */}
-              {runtimeState === 'STREAMING' && (
-                <div className="glass" style={{ padding: '12px 20px', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid rgba(255,255,255,0.15)' }}>
-                  <div className="wave-bar" style={{ animationDelay: '0.1s' }}></div>
-                  <div className="wave-bar" style={{ animationDelay: '0.3s' }}></div>
-                  <div className="wave-bar" style={{ animationDelay: '0.5s' }}></div>
-                  <div className="wave-bar" style={{ animationDelay: '0.2s' }}></div>
-                  <div className="wave-bar" style={{ animationDelay: '0.4s' }}></div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Action Session Controller bar */}
-          <div className="glass" style={{ padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '1px', textTransform: 'uppercase' }}>
-                Full-Duplex Bridge Gateway
-              </span>
-              <span style={{ fontSize: '14px', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                {runtimeState === 'DISCONNECTED' ? 'Ready to initiate session.' : 'Voice connection active.'}
-              </span>
-            </div>
-
+      {/* ── Permission error banner ── */}
+      {permError && (
+        <div style={{
+          flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10,
+          padding: '10px 14px', background: '#fff7ed',
+          borderBottom: '1px solid #fed7aa', fontSize: 12, color: '#92400e', lineHeight: 1.4,
+        }}>
+          <span style={{ fontSize: 16, flexShrink: 0 }}>⚠️</span>
+          <span style={{ flex: 1, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+            {permError}
             <button
-              onClick={toggleStream}
-              className="glass"
+              onClick={requestPermissions}
               style={{
-                padding: '12px 28px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                cursor: 'pointer',
-                backgroundColor: runtimeState !== 'DISCONNECTED' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(6, 182, 212, 0.15)',
-                borderColor: runtimeState !== 'DISCONNECTED' ? 'var(--color-red)' : 'var(--color-cyan)',
+                background: '#ea580c',
                 color: '#fff',
-                fontSize: '15px',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '4px 10px',
+                fontSize: '11px',
                 fontWeight: 600,
-                transition: 'all 0.2s'
+                cursor: 'pointer',
+                whiteSpace: 'nowrap'
               }}
             >
-              {runtimeState !== 'DISCONNECTED' ? (
-                <>
-                  <Square size={16} fill="#fff" />
-                  Disconnect Session
-                </>
-              ) : (
-                <>
-                  <Play size={16} fill="#fff" />
-                  Initialize Agent Link
-                </>
-              )}
+              Grant Permissions
+            </button>
+          </span>
+          <button onClick={() => setPermError(null)}
+            style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#92400e', fontSize: 16, padding: 0, lineHeight: 1, marginLeft: 'auto' }}>
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* ── Chat feed ── */}
+      <div className="chat-feed">
+        <div className="date-divider"><span>Today</span></div>
+
+        {msgs.map(m => (
+          <div key={m.id} className={`bubble-row ${m.sender}`}>
+            {m.sender === 'ai' && (
+              <div className="ai-avatar"><Sparkles size={12} /></div>
+            )}
+            {m.sender === 'user' ? (
+              <div className="bubble-user">{m.text}</div>
+            ) : (
+              <div className="bubble-ai">
+                {m.gallery && (
+                  <div className="bubble-gallery">
+                    {m.gallery.map((src, i) => (
+                      src.includes('.mp4') ? (
+                        <video key={i} src={src} controls className="gallery-video" style={{ width: '80px', height: '80px', borderRadius: '12px', objectFit: 'cover', flexShrink: 0 }} />
+                      ) : (
+                        <img key={i} src={src} className="gallery-img" alt="creative preview" />
+                      )
+                    ))}
+                  </div>
+                )}
+                {m.text}
+                {m.gallery && (
+                  <button className="bubble-cta">
+                    <Zap size={12} /> Open in Ad Studio
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+
+        {typing && (
+          <div className="bubble-row ai">
+            <div className="ai-avatar"><Sparkles size={12} /></div>
+            <div className="typing-indicator">
+              <span className="typing-dot" />
+              <span className="typing-dot" />
+              <span className="typing-dot" />
+            </div>
+          </div>
+        )}
+
+        <div ref={feedEnd} />
+      </div>
+
+      {/* ── Bottom bar ── */}
+      <div className="bottom-bar">
+        {/* Input + controls row */}
+        <div className="input-row">
+          {/* Media controls */}
+          <div className="media-controls">
+            {/* Mic */}
+            <button
+              className={`ctrl ${isMicLive ? 'ctrl-on' : ''}`}
+              onClick={() => isLive ? setMicOn(v => !v) : startSession()}
+              aria-label={isLive ? 'Toggle mic' : 'Start live'}
+              title={isLive ? (micOn ? 'Mute mic' : 'Unmute mic') : 'Start voice session'}
+            >
+              {isMicLive ? <Mic size={17} /> : <MicOff size={17} />}
+            </button>
+
+            {/* Camera */}
+            <button
+              className={`ctrl ${camOn ? 'ctrl-on' : ''}`}
+              onClick={() => setCamOn(v => !v)}
+              aria-label="Toggle camera"
+              title={camOn ? 'Turn off camera' : 'Turn on camera'}
+            >
+              {camOn ? <Video size={17} /> : <VideoOff size={17} />}
+            </button>
+
+            {/* Call / End */}
+            <button
+              className={`ctrl ${isLive ? 'ctrl-red' : 'ctrl-live'}`}
+              onClick={isLive ? endSession : startSession}
+              aria-label={isLive ? 'End session' : 'Start session'}
+              title={isLive ? 'End live session' : 'Start live session'}
+            >
+              {isLive ? <PhoneOff size={18} /> : <Phone size={18} />}
             </button>
           </div>
 
-          {/* Real-time Text Command Input for Multi-Turn Interruption Testing */}
-          {runtimeState !== 'DISCONNECTED' && (
-            <div className="glass" style={{ padding: '12px 24px', display: 'flex', gap: '12px', alignItems: 'center' }}>
+          {/* Text input */}
+          <div className="text-input-wrap">
+            <input
+              className="text-input"
+              placeholder="Message"
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && sendMsg()}
+            />
+            <button className={`send-btn ${input.trim() ? 'ready' : ''}`} onClick={sendMsg} aria-label="Send">
+              <Send size={15} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Fullscreen video overlay ── */}
+      <div className={`video-overlay ${camOn ? 'open' : ''}`}>
+        <button className="video-close" onClick={() => setCamOn(false)} aria-label="Close camera">
+          <X size={18} />
+        </button>
+        <video ref={videoRef} autoPlay playsInline muted />
+        <canvas ref={canvasRef} width={640} height={480} style={{ display: 'none' }} />
+        <div className="video-overlay-bar">
+          <button
+            className={`vid-ctrl ${micOn ? 'vid-ctrl-default' : 'vid-ctrl-muted'}`}
+            onClick={() => setMicOn(v => !v)}
+            aria-label="Toggle mic"
+          >
+            {micOn ? <Mic size={22} color="#fff" /> : <MicOff size={22} />}
+          </button>
+          <button
+            className="vid-ctrl vid-ctrl-end"
+            onClick={() => { setCamOn(false); if (isLive) endSession(); }}
+            aria-label="End"
+          >
+            <PhoneOff size={24} color="#fff" />
+          </button>
+          <button
+            className="vid-ctrl vid-ctrl-default"
+            onClick={() => setCamOn(false)}
+            aria-label="Close video"
+          >
+            <VideoOff size={22} color="#fff" />
+          </button>
+        </div>
+      </div>
+
+      {/* ── Logs Modal ── */}
+      <div className={`modal-backdrop ${logsOpen ? 'open' : ''}`} onClick={() => setLogsOpen(false)}>
+        <div className="modal-sheet" onClick={e => e.stopPropagation()}>
+          <div className="modal-handle" />
+          <div className="modal-header">
+            <span className="modal-title">
+              <AlignLeft size={14} /> Twin-Plane Ledger
+            </span>
+            <button className="modal-close" onClick={() => setLogsOpen(false)}>
+              <X size={14} />
+            </button>
+          </div>
+          <div className="modal-body">
+            {logs.length === 0 ? (
+              <div className="log-empty">
+                <Info size={18} />
+                <span>Start a session — agent logs will appear here.</span>
+              </div>
+            ) : logs.map(l => (
+              <div key={l.id} className={`log-item ${logClass(l.agentName)}`}>
+                <div className="log-agent">{l.agentName} · {l.timestamp}</div>
+                <div className="log-text">{l.message}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Settings Modal ── */}
+      <div className={`modal-backdrop ${settingsOpen ? 'open' : ''}`} onClick={() => setSettingsOpen(false)}>
+        <div className="modal-sheet" onClick={e => e.stopPropagation()}>
+          <div className="modal-handle" />
+          <div className="modal-header">
+            <span className="modal-title">
+              <Settings size={14} /> Business Profile
+            </span>
+            <button className="modal-close" onClick={() => setSettingsOpen(false)}>
+              <X size={14} />
+            </button>
+          </div>
+          <div className="modal-body">
+            {(['businessName', 'merchantLocation', 'businessCategory'] as const).map(k => (
+              <div key={k} className="field-group">
+                <label className="field-label">
+                  {{ businessName: 'Merchant Name', merchantLocation: 'Location', businessCategory: 'Category' }[k]}
+                </label>
+                <input
+                  className="field-input"
+                  value={profile[k]}
+                  disabled
+                  readOnly
+                  placeholder={profile[k] || 'Discovered via conversation...'}
+                />
+              </div>
+            ))}
+            <div className="field-group">
+              <label className="field-label">WebSocket Gateway URL (Optional Override)</label>
               <input
-                type="text"
-                value={textCommand}
-                onChange={(e) => setTextCommand(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') sendTextCommand(); }}
-                placeholder="Type dynamic instruction (e.g. 'Make a neon-green coconut ad', or stop with 'Wait, make it blue instead')"
-                style={{
-                  flex: 1,
-                  background: 'rgba(255,255,255,0.03)',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: '12px',
-                  padding: '12px 16px',
-                  color: '#fff',
-                  fontSize: '14px',
-                  outline: 'none',
-                  transition: 'border-color 0.2s'
+                className="field-input"
+                placeholder="e.g. wss://your-ngrok-url.ngrok-free.app or ws://192.168.x.x:50051"
+                value={wsUrlOverride}
+                disabled={isLive}
+                onChange={e => {
+                  setWsUrlOverride(e.target.value);
+                  localStorage.setItem('ws_url_override', e.target.value);
                 }}
               />
-              <button
-                onClick={sendTextCommand}
-                className="glass"
-                style={{
-                  padding: '12px 24px',
-                  cursor: 'pointer',
-                  backgroundColor: 'rgba(6, 182, 212, 0.15)',
-                  borderColor: 'var(--color-cyan)',
-                  color: '#fff',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  borderRadius: '12px',
-                  whiteSpace: 'nowrap'
-                }}
-              >
-                Send Command
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Right Side Column: Swarm agentic thoughts and outputs */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-
-          {/* Box 1: Handoff Ledger (Agent Swarm Activity Log) */}
-          <div className="glass-dark" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '20px', border: '1px solid rgba(255,255,255,0.06)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-              <Terminal size={18} color="var(--color-cyan)" />
-              <h2 style={{ fontSize: '16px', fontWeight: 600, color: '#fff', letterSpacing: '-0.3px', margin: 0 }}>
-                Antigravity Agentic Ledger
-              </h2>
-            </div>
-
-            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingRight: '4px' }}>
-              {ledger.length === 0 ? (
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: '8px', color: 'var(--text-muted)' }}>
-                  <Sparkles size={24} />
-                  <span style={{ fontSize: '13px' }}>Swarm logs will display here once session starts.</span>
-                </div>
-              ) : (
-                ledger.map((entry) => (
-                  <div key={entry.id} className="glass" style={{ padding: '10px 14px', borderRadius: '12px', backgroundColor: 'rgba(255,255,255,0.02)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                      <span style={{ fontSize: '11px', fontWeight: 600, color: entry.agentName.includes('Geo') ? 'var(--color-cyan)' : entry.agentName.includes('Archivist') ? 'var(--color-purple)' : '#10b981', textTransform: 'uppercase' }}>
-                        {entry.agentName}
-                      </span>
-                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                        {entry.timestamp}
-                      </span>
-                    </div>
-                    <p style={{ fontSize: '13px', color: 'var(--text-primary)', lineHeight: 1.4 }}>
-                      {entry.message}
-                    </p>
-                  </div>
-                ))
-              )}
-              <div ref={ledgerEndRef} />
             </div>
           </div>
-
-          {/* Box 2: Creative preview output when generated */}
-          {adUrl && (
-            <div className="glass-dark" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', border: '1px solid rgba(168, 85, 247, 0.4)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Sparkles size={18} color="var(--color-purple)" />
-                  <h2 style={{ fontSize: '16px', fontWeight: 600, color: '#fff', margin: 0 }}>Generated Creative</h2>
-                </div>
-                <span style={{ fontSize: '10px', backgroundColor: 'rgba(168, 85, 247, 0.2)', color: 'var(--color-purple)', padding: '2px 8px', borderRadius: '10px', fontWeight: 600 }}>
-                  ACTIVE PREVIEW
-                </span>
-              </div>
-
-              {/* Multi-Format Tabs */}
-              <div style={{ display: 'flex', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '8px', gap: '16px' }}>
-                <button
-                  onClick={() => setActiveCreativeTab('still')}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: activeCreativeTab === 'still' ? 'var(--color-cyan)' : '#94a3b8',
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    borderBottom: activeCreativeTab === 'still' ? '2px solid var(--color-cyan)' : 'none',
-                    paddingBottom: '4px',
-                    outline: 'none'
-                  }}
-                >
-                  Still Ad (1:1)
-                </button>
-                <button
-                  onClick={() => setActiveCreativeTab('motion')}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: activeCreativeTab === 'motion' ? 'var(--color-cyan)' : '#94a3b8',
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    borderBottom: activeCreativeTab === 'motion' ? '2px solid var(--color-cyan)' : 'none',
-                    paddingBottom: '4px',
-                    outline: 'none'
-                  }}
-                >
-                  Motion Ad (Anim)
-                </button>
-                <button
-                  onClick={() => setActiveCreativeTab('cinematic')}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: activeCreativeTab === 'cinematic' ? 'var(--color-cyan)' : '#94a3b8',
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    borderBottom: activeCreativeTab === 'cinematic' ? '2px solid var(--color-cyan)' : 'none',
-                    paddingBottom: '4px',
-                    outline: 'none',
-                    opacity: cinematicAdUrl ? 1 : 0.4,
-                    pointerEvents: cinematicAdUrl ? 'auto' : 'none'
-                  }}
-                  disabled={!cinematicAdUrl}
-                >
-                  Cinematic Ad (9:16)
-                </button>
-              </div>
-
-              {/* Creative display container */}
-              <div className="glass" style={{ width: '100%', height: '280px', overflow: 'hidden', display: 'flex', justifyContent: 'center', alignItems: 'center', backgroundColor: '#000', position: 'relative' }}>
-                {activeCreativeTab === 'still' && stillAdUrl && (
-                  <img src={stillAdUrl} alt="Still Ad Preview" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                )}
-                {activeCreativeTab === 'motion' && stillAdUrl && (
-                  <div className="glare-overlay" style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
-                    <img className="motion-ad-zoom" src={stillAdUrl} alt="Motion Ad Preview" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                  </div>
-                )}
-                {activeCreativeTab === 'cinematic' && keyframes.length > 0 ? (
-                  <div style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', display: 'flex', justifyContent: 'center' }}>
-                    <img
-                      key={activeKeyframeIndex}
-                      className="cinematic-ad-pan"
-                      src={keyframes[activeKeyframeIndex]}
-                      alt={`Cinematic Frame ${activeKeyframeIndex + 1}`}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    />
-                    <div style={{
-                      position: 'absolute',
-                      bottom: '8px',
-                      left: '8px',
-                      backgroundColor: 'rgba(0,0,0,0.6)',
-                      color: 'var(--color-cyan)',
-                      fontSize: '11px',
-                      padding: '2px 8px',
-                      borderRadius: '4px',
-                      fontFamily: 'var(--font-mono)'
-                    }}>
-                      STORYBOARD: FRAME {activeKeyframeIndex + 1}/3
-                    </div>
-                  </div>
-                ) : (
-                  activeCreativeTab === 'cinematic' && cinematicAdUrl && (
-                    <div style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', display: 'flex', justifyContent: 'center' }}>
-                      <img className="cinematic-ad-pan" src={cinematicAdUrl} alt="Cinematic Ad Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    </div>
-                  )
-                )}
-              </div>
-
-              {/* Optional Keyframe Storyboard Filmstrip */}
-              {activeCreativeTab === 'cinematic' && keyframes.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '12px' }}>
-                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 500 }}>
-                    Omni Flash Reel Timeline Pipeline (Suggestive Reference Keyframes)
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-                    {keyframes.map((url, idx) => (
-                      <div
-                        key={idx}
-                        onClick={() => setActiveKeyframeIndex(idx)}
-                        style={{
-                          cursor: 'pointer',
-                          border: activeKeyframeIndex === idx ? '2px solid var(--color-cyan)' : '1px solid rgba(255,255,255,0.1)',
-                          borderRadius: '8px',
-                          overflow: 'hidden',
-                          position: 'relative',
-                          height: '60px',
-                          opacity: activeKeyframeIndex === idx ? 1 : 0.6
-                        }}
-                      >
-                        <img src={url} alt={`Frame ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        <div style={{
-                          position: 'absolute',
-                          top: '2px',
-                          left: '2px',
-                          fontSize: '8px',
-                          backgroundColor: 'rgba(0,0,0,0.7)',
-                          color: '#fff',
-                          padding: '1px 4px',
-                          borderRadius: '2px'
-                        }}>
-                          F{idx + 1}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Dispatch trigger buttons */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <a
-                  href={`https://wa.me/?text=${encodeURIComponent('Check out this new ad listing: ' + adUrl)}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="glass"
-                  style={{
-                    padding: '10px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '6px',
-                    color: '#fff',
-                    textDecoration: 'none',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                    borderColor: 'rgba(16, 185, 129, 0.4)'
-                  }}
-                >
-                  <Share2 size={14} />
-                  WhatsApp
-                </a>
-                <button
-                  onClick={() => window.open(adUrl, '_blank')}
-                  className="glass"
-                  style={{
-                    padding: '10px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '6px',
-                    color: '#fff',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
-                >
-                  <ExternalLink size={14} />
-                  View Original
-                </button>
-              </div>
-            </div>
-          )}
         </div>
-      </main>
+      </div>
+
     </div>
   );
 }

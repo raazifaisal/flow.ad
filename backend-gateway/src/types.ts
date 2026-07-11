@@ -8,7 +8,7 @@ export interface ClientMessage {
   text?: string;  // text command representing transcribed voice
 }
 
-export type ServerMessageType = 'STATE_MUTATION' | 'AUDIO_OUTPUT' | 'AD_PREVIEW' | 'AGENT_LOG';
+export type ServerMessageType = 'STATE_MUTATION' | 'AUDIO_OUTPUT' | 'AD_PREVIEW' | 'AGENT_LOG' | 'TRANSCRIPT' | 'BUSINESS_CONFIRMED';
 
 export interface ServerMessage {
   type: ServerMessageType;
@@ -20,4 +20,12 @@ export interface ServerMessage {
   keyframes?: string[];
   agentName?: string;
   executionLog?: string;
+  transcript?: string;  // transcribed text from Live conversation
+  sender?: 'user' | 'ai'; // who said the transcript
+  businessProfile?: {
+    businessName: string;
+    merchantLocation: string;
+    businessCategory: string;
+    targetLanguage: string;
+  };
 }
