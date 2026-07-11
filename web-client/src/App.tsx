@@ -24,6 +24,9 @@ type EngineState = 'DISCONNECTED' | 'CONNECTED' | 'STREAMING' | 'BARGE_IN_FREEZE
 export default function App() {
   const [runtimeState, setRuntimeState] = useState<EngineState>('DISCONNECTED');
   const [adUrl, setAdUrl] = useState<string | null>(null);
+  const [stillAdUrl, setStillAdUrl] = useState<string | null>(null);
+  const [cinematicAdUrl, setCinematicAdUrl] = useState<string | null>(null);
+  const [activeCreativeTab, setActiveCreativeTab] = useState<'still' | 'motion' | 'cinematic'>('still');
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
   const [sessionId] = useState<string>(() => `session_${Date.now()}`);
 
@@ -132,8 +135,17 @@ export default function App() {
             break;
 
           case 'AD_PREVIEW':
-            if (message.url) {
+            if (message.stillUrl) {
+              setStillAdUrl(message.stillUrl);
+              setCinematicAdUrl(message.cinematicUrl || null);
+              setAdUrl(message.stillUrl);
+              setActiveCreativeTab('still');
+              setRuntimeState('CREATIVE_PROCESSING');
+              appendLedger('Creative Director', `New dynamic ad asset compiled (Still & Cinematic formats): ${message.stillUrl}`);
+            } else if (message.url) {
+              setStillAdUrl(message.url);
               setAdUrl(message.url);
+              setActiveCreativeTab('still');
               setRuntimeState('CREATIVE_PROCESSING');
               appendLedger('Creative Director', `New dynamic ad asset compiled: ${message.url}`);
             }
@@ -430,12 +442,75 @@ export default function App() {
                 </span>
               </div>
 
+              {/* Multi-Format Tabs */}
+              <div style={{ display: 'flex', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '8px', gap: '16px' }}>
+                <button 
+                  onClick={() => setActiveCreativeTab('still')}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: activeCreativeTab === 'still' ? 'var(--color-cyan)' : '#94a3b8',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    borderBottom: activeCreativeTab === 'still' ? '2px solid var(--color-cyan)' : 'none',
+                    paddingBottom: '4px',
+                    outline: 'none'
+                  }}
+                >
+                  Still Ad (1:1)
+                </button>
+                <button 
+                  onClick={() => setActiveCreativeTab('motion')}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: activeCreativeTab === 'motion' ? 'var(--color-cyan)' : '#94a3b8',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    borderBottom: activeCreativeTab === 'motion' ? '2px solid var(--color-cyan)' : 'none',
+                    paddingBottom: '4px',
+                    outline: 'none'
+                  }}
+                >
+                  Motion Ad (Anim)
+                </button>
+                <button 
+                  onClick={() => setActiveCreativeTab('cinematic')}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: activeCreativeTab === 'cinematic' ? 'var(--color-cyan)' : '#94a3b8',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    borderBottom: activeCreativeTab === 'cinematic' ? '2px solid var(--color-cyan)' : 'none',
+                    paddingBottom: '4px',
+                    outline: 'none',
+                    opacity: cinematicAdUrl ? 1 : 0.4,
+                    pointerEvents: cinematicAdUrl ? 'auto' : 'none'
+                  }}
+                  disabled={!cinematicAdUrl}
+                >
+                  Cinematic Ad (9:16)
+                </button>
+              </div>
+
               {/* Creative display container */}
-              <div className="glass" style={{ width: '100%', height: '240px', overflow: 'hidden', display: 'flex', justifyContent: 'center', alignItems: 'center', backgroundColor: '#000', position: 'relative' }}>
-                {adUrl.endsWith('.mp4') ? (
-                  <video src={adUrl} autoPlay loop muted controls style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                ) : (
-                  <img src={adUrl} alt="Generated Creative preview" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              <div className="glass" style={{ width: '100%', height: '280px', overflow: 'hidden', display: 'flex', justifyContent: 'center', alignItems: 'center', backgroundColor: '#000', position: 'relative' }}>
+                {activeCreativeTab === 'still' && stillAdUrl && (
+                  <img src={stillAdUrl} alt="Still Ad Preview" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                )}
+                {activeCreativeTab === 'motion' && stillAdUrl && (
+                  <div className="glare-overlay" style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
+                    <img className="motion-ad-zoom" src={stillAdUrl} alt="Motion Ad Preview" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                  </div>
+                )}
+                {activeCreativeTab === 'cinematic' && cinematicAdUrl && (
+                  <div style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', display: 'flex', justifyContent: 'center' }}>
+                    <img className="cinematic-ad-pan" src={cinematicAdUrl} alt="Cinematic Ad Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  </div>
                 )}
               </div>
 

@@ -279,49 +279,69 @@ wss.on('connection', (ws: WebSocket) => {
                               executionLog: 'Building prompt blueprint for NB2 Lite layout engine...'
                             });
 
-                            const blueprintPrompt = `Create a high resolution studio display ad banner for ${args.focus_product} with a primary background color of ${args.background_color}. Integrate the following regional copy or slang natively: "${args.text_copy || updatedManifest.recommended_copy_strategy}". Ensure maximum visual impact, professional typesetting, and clear contrast.`;
+                            const stillPrompt = `Create a high resolution 1K studio display square ad banner for ${args.focus_product} with a primary background color of ${args.background_color}. Integrate the following copy: "${args.text_copy || updatedManifest.recommended_copy_strategy}". Ensure professional typesetting and high contrast.`;
+                            const cinematicPrompt = `Create a high resolution 9:16 vertical mobile display ad reel banner for ${args.focus_product} with a primary background color of ${args.background_color}. Integrate the following copy: "${args.text_copy || updatedManifest.recommended_copy_strategy}". Optimized for social media reels, with clear central focus and contrast.`;
 
-                            // Step B: Invoke Imagen (NB2 Lite equivalent for high-quality banner)
+                            // Step B: Invoke Imagen (NB2 Lite equivalent)
                             sendToClient({
                               type: 'AGENT_LOG',
                               agentName: 'NB2 Lite Image Fleet',
-                              executionLog: 'Generating high-resolution 1K advertisement graphic...'
+                              executionLog: 'Generating Still (1:1) and Cinematic (9:16) advertisement graphics in parallel...'
                             });
 
-                            const imageResponse = await ai.models.generateImages({
-                              model: 'gemini-3.1-flash-lite-image',
-                              prompt: blueprintPrompt,
-                              config: {
-                                numberOfImages: 1,
-                                outputMimeType: 'image/jpeg',
-                                aspectRatio: '1:1'
-                              }
-                            });
+                            const [stillResponse, cinematicResponse] = await Promise.all([
+                              ai.models.generateImages({
+                                model: 'gemini-3.1-flash-lite-image',
+                                prompt: stillPrompt,
+                                config: {
+                                  numberOfImages: 1,
+                                  outputMimeType: 'image/jpeg',
+                                  aspectRatio: '1:1'
+                                }
+                              }),
+                              ai.models.generateImages({
+                                model: 'gemini-3.1-flash-lite-image',
+                                prompt: cinematicPrompt,
+                                config: {
+                                  numberOfImages: 1,
+                                  outputMimeType: 'image/jpeg',
+                                  aspectRatio: '9:16'
+                                }
+                              })
+                            ]);
 
-                            const base64Image = imageResponse.generatedImages?.[0]?.image?.imageBytes;
-                            if (!base64Image) {
-                              throw new Error('Image generation did not return image bytes');
+                            const base64Still = stillResponse.generatedImages?.[0]?.image?.imageBytes;
+                            const base64Cinematic = cinematicResponse.generatedImages?.[0]?.image?.imageBytes;
+                            if (!base64Still || !base64Cinematic) {
+                              throw new Error('Image generation did not return image bytes for both formats');
                             }
 
-                            // Save the image locally to public directory
-                            const imageFilename = `ad_${currentSessionId}.jpg`;
-                            const imagePath = path.join(publicDir, imageFilename);
-                            fs.writeFileSync(imagePath, Buffer.from(base64Image, 'base64'));
+                            // Save the images locally to public directory
+                            const stillFilename = `still_${currentSessionId}.jpg`;
+                            const cinematicFilename = `cinematic_${currentSessionId}.jpg`;
+                            
+                            const stillPath = path.join(publicDir, stillFilename);
+                            const cinematicPath = path.join(publicDir, cinematicFilename);
+                            
+                            fs.writeFileSync(stillPath, Buffer.from(base64Still, 'base64'));
+                            fs.writeFileSync(cinematicPath, Buffer.from(base64Cinematic, 'base64'));
 
-                            const adPreviewUrl = `http://localhost:${PORT}/public/${imageFilename}`;
-                            console.log(`[Media Generation] Saved generated ad to ${imagePath}`);
+                            const stillUrl = `http://localhost:${PORT}/public/${stillFilename}`;
+                            const cinematicUrl = `http://localhost:${PORT}/public/${cinematicFilename}`;
+                            
+                            console.log(`[Media Generation] Saved generated ads to ${stillPath} and ${cinematicPath}`);
 
                             sendToClient({
                               type: 'AGENT_LOG',
                               agentName: 'NB2 Lite Image Fleet',
-                              executionLog: `Ad image rendered and saved to public path. URL: ${adPreviewUrl}`
+                              executionLog: `Still banner (1:1) and Cinematic reel (9:16) rendered successfully.`
                             });
 
                             // Step C: Run Gemini 3.5 Flash Visual QA Supervisor loop
                             sendToClient({
                               type: 'AGENT_LOG',
                               agentName: 'QA Supervisor',
-                              executionLog: 'Starting visual layout and typography contrast audit...'
+                              executionLog: 'Starting visual layout and typography contrast audit on Still image...'
                             });
 
                             const qaInstruction = `
@@ -338,7 +358,7 @@ Output exactly a JSON object containing: {"compliant": boolean, "required_adjust
                                   role: 'user',
                                   parts: [
                                     { text: qaInstruction },
-                                    { inlineData: { mimeType: 'image/jpeg', data: base64Image } }
+                                    { inlineData: { mimeType: 'image/jpeg', data: base64Still } }
                                   ]
                                 }
                               ]
@@ -362,17 +382,19 @@ Output exactly a JSON object containing: {"compliant": boolean, "required_adjust
                               });
                             }
 
-                            // Step D: Gemini Omni Flash vertical video compilation (simulate video packaging)
+                            // Step D: Gemini Omni Flash vertical video compilation
                             sendToClient({
                               type: 'AGENT_LOG',
                               agentName: 'Gemini Omni Flash',
-                              executionLog: 'Packaging layout timeline into 9:16 short vertical ad reel...'
+                              executionLog: 'Packaging layout timeline into motion and cinematic reels...'
                             });
 
                             // Send preview URL down to client
                             sendToClient({
                               type: 'AD_PREVIEW',
-                              url: adPreviewUrl
+                              url: stillUrl,
+                              stillUrl: stillUrl,
+                              cinematicUrl: cinematicUrl
                             });
 
                             // Return response to Gemini Live Session
@@ -387,7 +409,9 @@ Output exactly a JSON object containing: {"compliant": boolean, "required_adjust
                                       response: {
                                         output: {
                                           status: 'success',
-                                          ad_preview_url: adPreviewUrl
+                                          ad_preview_url: stillUrl,
+                                          still_url: stillUrl,
+                                          cinematic_url: cinematicUrl
                                         }
                                       }
                                     }
@@ -395,7 +419,6 @@ Output exactly a JSON object containing: {"compliant": boolean, "required_adjust
                                 ]
                               }
                             });
-
                           } catch (genErr: any) {
                             console.error('[Creative Chain Error]:', genErr);
                             sendToClient({
