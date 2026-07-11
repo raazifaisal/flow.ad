@@ -63,10 +63,16 @@ Output only the raw JSON. Do not include markdown code wrappers (e.g., \`\`\`jso
     });
 
     console.log(`[Swarm Ingestion] Successfully created interaction: ${interaction.id}`);
+    console.log('[Swarm Ingestion] Diagnostic keys:', Object.keys(interaction));
+    console.log('[Swarm Ingestion] raw text:', (interaction as any).text);
+    console.log('[Swarm Ingestion] outputText:', (interaction as any).outputText);
+    console.log('[Swarm Ingestion] output_text:', (interaction as any).output_text);
+    
+    const manifestJson = (interaction as any).text || (interaction as any).outputText || (interaction as any).output_text || defaultManifest;
     
     return {
       interactionId: interaction.id || `mock_thread_${Date.now()}`,
-      manifestJson: interaction.text || defaultManifest
+      manifestJson: manifestJson
     };
   } catch (error: any) {
     console.warn('[Control Plane Exception] Swarm API failed. Fallback to baseline context:', error.message || error);
@@ -102,7 +108,8 @@ export async function updateInteractionContext(
       environment: 'remote',
     });
 
-    return interaction.text || defaultManifest;
+    const updatedManifestJson = (interaction as any).text || (interaction as any).outputText || (interaction as any).output_text || defaultManifest;
+    return updatedManifestJson;
   } catch (error: any) {
     console.warn(`[Control Plane Exception] Failed to update interaction ${interactionId}:`, error.message || error);
     return defaultManifest;
