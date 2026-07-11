@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
-import { spawnContextIngestionSwarm } from './swarm';
+import { spawnContextIngestionSwarm, updateInteractionContext } from './swarm';
 import { ClientMessage, ServerMessage } from './types';
 import {
   publishToWhatsApp,
@@ -57,6 +57,7 @@ console.log(`[Static ad creatives served at http://localhost:${PORT}/public/]`);
 wss.on('connection', (ws: WebSocket) => {
   let liveSession: any = null;
   let currentSessionId = 'unknown';
+  let currentInteractionId = '';
 
   console.log('[Client Connected]');
 
@@ -83,8 +84,32 @@ wss.on('connection', (ws: WebSocket) => {
             executionLog: 'Session initialization received. Activating Twin-Plane planes...'
           });
 
+          // Load mock business profile context from local JSON
+          const mockProfilePath = path.join(__dirname, 'mock_business_profile.json');
+          let businessProfile = {
+            businessName: "Sri Ganesha Tender Coconut & Fresh Fruit Juice",
+            merchantLocation: "Malleshwaram, Bangalore",
+            businessCategory: "Tender Coconut & Fruit Juice Stall",
+            targetLanguage: "Kannada"
+          };
+          try {
+            if (fs.existsSync(mockProfilePath)) {
+              businessProfile = JSON.parse(fs.readFileSync(mockProfilePath, 'utf8'));
+            }
+          } catch (err) {
+            console.warn('[INIT_SESSION] Failed to read mock business profile file, using baseline.');
+          }
+
+          sendToClient({
+            type: 'AGENT_LOG',
+            agentName: 'System Gate',
+            executionLog: `Retrieved business profile for: "${businessProfile.businessName}" (${businessProfile.merchantLocation})`
+          });
+
           // 1. Spawning context ingestion swarm asynchronously (Control Plane)
-          const manifestJson = await spawnContextIngestionSwarm(currentSessionId);
+          const swarmResult = await spawnContextIngestionSwarm(currentSessionId, businessProfile);
+          currentInteractionId = swarmResult.interactionId;
+          const manifestJson = swarmResult.manifestJson;
           console.log(`[Control Plane Swarm] Manifest output: ${manifestJson}`);
           
           let parsedManifest = {
@@ -207,6 +232,24 @@ wss.on('connection', (ws: WebSocket) => {
                           });
 
                           try {
+                            // Update the stateful interaction thread in the sandbox before proceeding
+                            sendToClient({
+                              type: 'AGENT_LOG',
+                              agentName: 'Swarm Coordinator',
+                              executionLog: `Updating session interaction context with creative parameters...`
+                            });
+
+                            const updateInstruction = `User requested creative generation. Focus Product: ${args.focus_product}, Background Color: ${args.background_color}, Overriding Copy: ${args.text_copy || 'None'}. Update design blueprint in session_manifest.json.`;
+                            const updatedManifestJson = await updateInteractionContext(currentInteractionId, updateInstruction);
+                            console.log(`[Control Plane Swarm] Updated manifest: ${updatedManifestJson}`);
+
+                            let updatedManifest = parsedManifest;
+                            try {
+                              updatedManifest = JSON.parse(updatedManifestJson.replace(/```json|```/g, '').trim());
+                            } catch (parseErr) {
+                              console.warn('[Control Plane] Failed to parse updated manifest, continuing with existing parameters.');
+                            }
+
                             // Step A: Creative Director Prompt generation fork
                             sendToClient({
                               type: 'AGENT_LOG',
@@ -214,7 +257,7 @@ wss.on('connection', (ws: WebSocket) => {
                               executionLog: 'Building prompt blueprint for NB2 Lite layout engine...'
                             });
 
-                            const blueprintPrompt = `Create a high resolution studio display ad banner for ${args.focus_product} with a primary background color of ${args.background_color}. Integrate the following regional copy or slang natively: "${args.text_copy || 'hyperlocal local deals'}". Ensure maximum visual impact, professional typesetting, and clear contrast.`;
+                            const blueprintPrompt = `Create a high resolution studio display ad banner for ${args.focus_product} with a primary background color of ${args.background_color}. Integrate the following regional copy or slang natively: "${args.text_copy || updatedManifest.recommended_copy_strategy}". Ensure maximum visual impact, professional typesetting, and clear contrast.`;
 
                             // Step B: Invoke Imagen (NB2 Lite equivalent for high-quality banner)
                             sendToClient({
