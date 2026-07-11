@@ -109,15 +109,15 @@ Rather than operating in isolated sequences, the three agents communicate by rea
   │         ▼                         ▼                         ▼          │
   ┌───────────────────┐     ┌───────────────────┐     ┌────────────────────┐       │
   │  AGENT A: SCOUT   │     │ AGENT B: ARCHIVIST│     │ AGENT C: STRATEGIST│       │
-  │ (Geo/Weather/Web) │     │ (Asset Styles/DB) │     │ (Slang & Keywords) │       │
+  │ (Geo/Weather/Web) │     │ (World Vibe Synth)│     │ (Slang & Keywords) │       │
   └───────────────────┘     └───────────────────┘     └────────────────────┘       │
   └────────────────────────────────────────────────────────────────────────┘
 
 ```
 
 * **Agent A (The Geo Scout):** Tracks ambient local metrics, scraping event sites, calendars, and local weather tables. *(Writes to manifest: High density gathering at nearby street market, sudden rain forecast).*
-* **Agent B (The Creative Archivist):** Evaluates Agent A's signals and queries the asset database for matching visual design layouts. *(Appends to manifest: Loading high-contrast tea stall/monsoon layout variants).*
-* **Agent C (The Slang Strategist):** Monitors neighborhood social activity and competitor storefronts, pulling high-resonance local slangs and idioms. *(Appends to manifest: Overriding formal text copy blocks. Injecting regional conversational markers like 'Machan' or 'Gethu' to connect with daily commuters).*
+* **Agent B (The Creative Archivist):** Evaluates Agent A's signals and applies Gemini's world knowledge to synthesize a dynamic visual design layout matching the product type and local weather (e.g. tropical vibes for hot days, warm colors for cold days) instead of using hardcoded templates.
+* **Agent C (The Slang Strategist):** Monitors neighborhood social activity and competitor storefronts, pulling high-resonance local slangs and idioms. *(Writes to manifest: Overriding formal copy blocks with region-specific tags like 'Machan' or 'Gethu').*
 
 ---
 
@@ -136,7 +136,7 @@ You are the Federated Swarm Coordinator governing three internal execution tasks
 
 Perform the following system iterations:
 1. Initialize Agent A (The Geo Scout): Query the search tool using the target coordinates and business category. Identify immediate local events, college festivals, neighborhood sports matches, and localized weather fluctuations happening within a 2-kilometer grid today.
-2. Initialize Agent B (The Creative Archivist): Analyze Agent A's findings. Select the optimal design template parameters and visual layout tokens from your internal library that match the current environmental vibe.
+2. Initialize Agent B (The Creative Archivist): Analyze Agent A's findings. Synthesize the optimal design theme, color palettes, and visual layout instructions dynamically using world knowledge matching the current environmental vibe and target product.
 3. Initialize Agent C (The Slang Strategist): Scan nearby public business markers and social feeds. Extract highly active regional slangs, localized keywords, and popular idioms unique to this specific market zone.
 
 Consolidate all values into a single, clean JSON string containing exclusively the keys:
