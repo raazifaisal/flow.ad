@@ -179,7 +179,7 @@ wss.on('connection', (ws: WebSocket) => {
               model: TARGET_LIVE_MODEL,
               config: {
                 responseModalities: [Modality.AUDIO],
-                systemInstruction: `The sandbox agent swarm provides pre-session ambient variables: ${JSON.stringify(parsedManifest)}. Once the user declares what they want to advertise (e.g. key lime pie, 20% off for Christ University students on weekdays), you MUST extract the tags (business_category, ad_tone, focus_product, offer_details) at runtime and call the 'fetch_reference_ads' tool first to find relevant campaigns. Then use those references to call the 'generate_marketing_ad' tool. Run real-time QA layers to enforce layout contrast limits. Use tools to generate and publish ads when user requests them. Prioritize local native Indian languages and native scripts in copy strategy generation and verbal communication.`,
+                systemInstruction: `The sandbox agent swarm provides pre-session ambient variables: ${JSON.stringify(parsedManifest)}. Once the user declares what they want to advertise (e.g. key lime pie, 20% off for Christ University students on weekdays), you MUST extract the tags (business_category, ad_tone, focus_product, offer_details) at runtime and call the 'fetch_reference_ads' tool first to find relevant campaigns. Then use those references to call the 'generate_marketing_ad' tool. All video ad prompts for Gemini Omni Flash ('cinematic_prompts') must represent exactly 3 vertical 9:16 portrait keyframes or scenes designed to assemble a short-form, high-speed vertical video between 3 to 10 seconds in length with synchronized audio. Run real-time QA layers to enforce layout contrast limits. Use tools to generate and publish ads when user requests them. Prioritize local native Indian languages and native scripts in copy strategy generation and verbal communication.`,
                 tools: [
                   {
                     functionDeclarations: [
@@ -199,15 +199,25 @@ wss.on('connection', (ws: WebSocket) => {
                       },
                       {
                         name: 'generate_marketing_ad',
-                        description: 'Generates a highly-localized marketing banner and video ad incorporating slangs and contextual triggers based on user instructions.',
+                        description: 'Generates highly-localized marketing banners and cinematic storyboard keyframes incorporating slangs, customer sentiment, and weather triggers. The prompts must be dynamically architected by you based on the conversation history, user preferences, and any fetched reference campaign details.',
                         parameters: {
                           type: Type.OBJECT,
                           properties: {
-                            background_color: { type: Type.STRING, description: 'Primary background theme color (e.g. blue, red, neon-green)' },
-                            text_copy: { type: Type.STRING, description: 'Overriding marketing slangs, phrases, or script blocks' },
-                            focus_product: { type: Type.STRING, description: 'Name of the main product featured in the ad' }
+                            image_prompt: {
+                              type: Type.STRING,
+                              description: 'The dynamically architected full prompt for the Still ad banner (1:1), weaving together slang, background theme, and focus product details.'
+                            },
+                            cinematic_prompts: {
+                              type: Type.ARRAY,
+                              items: { type: Type.STRING },
+                              description: 'An array of dynamic prompts (exactly 3 items) representing consecutive storyboard keyframes (9:16 vertical reels) for video animations.'
+                            },
+                            focus_product: {
+                              type: Type.STRING,
+                              description: 'Name of the main product featured in the ad'
+                            }
                           },
-                          required: ['background_color', 'focus_product']
+                          required: ['image_prompt', 'cinematic_prompts', 'focus_product']
                         }
                       },
                       {
@@ -399,12 +409,13 @@ wss.on('connection', (ws: WebSocket) => {
                               }
                             }
 
-                            const stillPrompt = `Create a high resolution 1K studio display square ad banner for ${args.focus_product} with a primary background color of ${args.background_color}.${referencePromptAddition} Integrate the following copy: "${args.text_copy || parsedManifest.recommended_copy_strategy}". Ensure professional typesetting and high contrast.`;
+                            const stillPrompt = args.image_prompt || `Create a high resolution 1K studio display square ad banner for ${args.focus_product} with a primary background color of ${args.background_color || 'neon-green'}.${referencePromptAddition} Integrate the following copy: "${args.text_copy || parsedManifest.recommended_copy_strategy}". Ensure professional typesetting and high contrast.`;
 
-                            // 3 Cinematic keyframe storyboard prompts for vertical layout video ad reference
-                            const cinematicFrame1Prompt = `Create a high resolution 9:16 vertical mobile display ad keyframe for ${args.focus_product} closeup with a primary background color of ${args.background_color}.${referencePromptAddition} Focus purely on a detailed macro closeup shot of the fresh product, macro lighting, high contrast. No text overlays.`;
-                            const cinematicFrame2Prompt = `Create a high resolution 9:16 vertical mobile display ad keyframe for ${args.focus_product} with a primary background color of ${args.background_color}.${referencePromptAddition} Focus on displaying the text copy: "${args.text_copy || parsedManifest.recommended_copy_strategy}" clearly over the product presentation. Ensure readability and high typography contrast.`;
-                            const cinematicFrame3Prompt = `Create a high resolution 9:16 vertical mobile display ad keyframe for ${args.focus_product} with a primary background color of ${args.background_color}.${referencePromptAddition} Focus on a final elegant branding scene displaying the business name: "${businessProfile.businessName}" alongside the product.`;
+                            // Retrieve cinematic keyframe prompts dynamically from the Live API orchestrator, falling back to templates if not provided
+                            const promptsList = args.cinematic_prompts || [];
+                            const cinematicFrame1Prompt = promptsList[0] || `Create a high resolution 9:16 vertical mobile display ad keyframe for ${args.focus_product} closeup with a primary background color of ${args.background_color || 'neon-green'}.${referencePromptAddition} Focus purely on a detailed macro closeup shot of the fresh product, macro lighting, high contrast. No text overlays.`;
+                            const cinematicFrame2Prompt = promptsList[1] || `Create a high resolution 9:16 vertical mobile display ad keyframe for ${args.focus_product} with a primary background color of ${args.background_color || 'neon-green'}.${referencePromptAddition} Focus on displaying the text copy: "${args.text_copy || parsedManifest.recommended_copy_strategy}" clearly over the product presentation. Ensure readability and high typography contrast.`;
+                            const cinematicFrame3Prompt = promptsList[2] || `Create a high resolution 9:16 vertical mobile display ad keyframe for ${args.focus_product} with a primary background color of ${args.background_color || 'neon-green'}.${referencePromptAddition} Focus on a final elegant branding scene displaying the business name: "${businessProfile.businessName}" alongside the product.`;
 
                             // Interruption Check
                             if (execGenerationId !== currentGenerationId) {
