@@ -15,6 +15,30 @@ interface SwarmResult {
 }
 
 /**
+ * Extracts generated text content from the stateful Interaction resource steps.
+ */
+function extractTextFromInteraction(interaction: any): string | null {
+  if (interaction.text) return interaction.text;
+  if (interaction.outputText) return interaction.outputText;
+  if (interaction.output_text) return interaction.output_text;
+  
+  if (interaction.steps && Array.isArray(interaction.steps)) {
+    for (const step of interaction.steps) {
+      if (step.modelOutput?.parts) {
+        for (const part of step.modelOutput.parts) {
+          if (part.text) return part.text;
+        }
+      } else if (step.content?.parts) {
+        for (const part of step.content.parts) {
+          if (part.text) return part.text;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * Control Plane Architecture: Initializes a stateful sandbox interaction thread
  * and runs Agent A, B, and C. The swarm uses the google_search tool in the remote sandbox
  * to dynamically query weather, events, and slang for the merchant's location.
@@ -23,7 +47,6 @@ export async function spawnContextIngestionSwarm(
   sessionId: string,
   profile: BusinessProfile
 ): Promise<SwarmResult> {
-  // Simple baseline fallback in case of connection exceptions
   const defaultManifest = JSON.stringify({
     local_event: "Weekend Bakery Sale",
     environmental_trigger: "Breezy afternoon",
@@ -64,11 +87,11 @@ Output only the raw JSON. Do not include markdown code wrappers (e.g., \`\`\`jso
 
     console.log(`[Swarm Ingestion] Successfully created interaction: ${interaction.id}`);
     console.log('[Swarm Ingestion] Diagnostic keys:', Object.keys(interaction));
-    console.log('[Swarm Ingestion] raw text:', (interaction as any).text);
-    console.log('[Swarm Ingestion] outputText:', (interaction as any).outputText);
-    console.log('[Swarm Ingestion] output_text:', (interaction as any).output_text);
     
-    const manifestJson = (interaction as any).text || (interaction as any).outputText || (interaction as any).output_text || defaultManifest;
+    const extractedText = extractTextFromInteraction(interaction);
+    console.log('[Swarm Ingestion] Extracted manifest text:', extractedText);
+    
+    const manifestJson = extractedText || defaultManifest;
     
     return {
       interactionId: interaction.id || `mock_thread_${Date.now()}`,
@@ -104,11 +127,12 @@ export async function updateInteractionContext(
     const interaction = await (ai as any).interactions.create({
       agent: 'antigravity-preview-05-2026',
       input: inputUpdate,
-      interactionId: interactionId,
+      previous_interaction_id: interactionId,
       environment: 'remote',
     });
 
-    const updatedManifestJson = (interaction as any).text || (interaction as any).outputText || (interaction as any).output_text || defaultManifest;
+    const extractedText = extractTextFromInteraction(interaction);
+    const updatedManifestJson = extractedText || defaultManifest;
     return updatedManifestJson;
   } catch (error: any) {
     console.warn(`[Control Plane Exception] Failed to update interaction ${interactionId}:`, error.message || error);
