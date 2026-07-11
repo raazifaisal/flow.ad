@@ -20,6 +20,7 @@ const TARGET_LIVE_MODEL = 'gemini-3.1-flash-live-preview';
 
 // Initialize the Google GenAI SDK.
 const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
   apiVersion: 'v1alpha'
 });
 
@@ -58,6 +59,7 @@ wss.on('connection', (ws: WebSocket) => {
   let liveSession: any = null;
   let currentSessionId = 'unknown';
   let currentInteractionId = '';
+  let businessProfile: any = null;
 
   console.log('[Client Connected]');
 
@@ -84,20 +86,28 @@ wss.on('connection', (ws: WebSocket) => {
             executionLog: 'Session initialization received. Activating Twin-Plane planes...'
           });
 
-          // Load mock business profile context from local JSON
+          // Load or save business profile context
           const mockProfilePath = path.join(__dirname, 'mock_business_profile.json');
-          let businessProfile = {
+          businessProfile = message.businessProfile || {
             businessName: "Sri Ganesha Tender Coconut & Fresh Fruit Juice",
             merchantLocation: "Malleshwaram, Bangalore",
             businessCategory: "Tender Coconut & Fruit Juice Stall",
             targetLanguage: "Kannada"
           };
-          try {
-            if (fs.existsSync(mockProfilePath)) {
-              businessProfile = JSON.parse(fs.readFileSync(mockProfilePath, 'utf8'));
+          if (message.businessProfile) {
+            try {
+              fs.writeFileSync(mockProfilePath, JSON.stringify(businessProfile, null, 2));
+            } catch (err) {
+              console.warn('[INIT_SESSION] Failed to write mock business profile:', err);
             }
-          } catch (err) {
-            console.warn('[INIT_SESSION] Failed to read mock business profile file, using baseline.');
+          } else {
+            try {
+              if (fs.existsSync(mockProfilePath)) {
+                businessProfile = JSON.parse(fs.readFileSync(mockProfilePath, 'utf8'));
+              }
+            } catch (err) {
+              console.warn('[INIT_SESSION] Failed to read mock business profile file, using baseline.');
+            }
           }
 
           sendToClient({
@@ -147,6 +157,12 @@ wss.on('connection', (ws: WebSocket) => {
           sendToClient({
             type: 'STATE_MUTATION',
             state: 'CONNECTED'
+          });
+
+          // Send active manifest back to client
+          sendToClient({
+            type: 'MANIFEST_UPDATED',
+            manifest: parsedManifest
           });
 
           // 2. Establishing full-duplex session to Google's live gateways
@@ -477,12 +493,10 @@ Output exactly a JSON object containing: {"compliant": boolean, "required_adjust
         case 'AUDIO_INPUT':
           if (liveSession && message.audio) {
             liveSession.sendRealtimeInput({
-              mediaChunks: [
-                {
-                  mimeType: 'audio/pcm;rate=16000',
-                  data: message.audio
-                }
-              ]
+              audio: {
+                mimeType: 'audio/pcm;rate=16000',
+                data: message.audio
+              }
             });
           }
           break;
@@ -490,12 +504,97 @@ Output exactly a JSON object containing: {"compliant": boolean, "required_adjust
         case 'VIDEO_INPUT':
           if (liveSession && message.image) {
             liveSession.sendRealtimeInput({
-              mediaChunks: [
-                {
-                  mimeType: 'image/jpeg',
-                  data: message.image
-                }
-              ]
+              video: {
+                mimeType: 'image/jpeg',
+                data: message.image
+              }
+            });
+          }
+          break;
+
+        case 'UPDATE_CONTEXT':
+          if (!currentInteractionId) {
+            sendToClient({
+              type: 'AGENT_LOG',
+              agentName: 'System Gate',
+              executionLog: 'Cannot update context: Session not initialized.'
+            });
+            break;
+          }
+          console.log(`[UPDATE_CONTEXT] Received manifest update request:`, message.manifest);
+          
+          sendToClient({
+            type: 'AGENT_LOG',
+            agentName: 'System Gate',
+            executionLog: 'Processing manifest refinement request...'
+          });
+
+          try {
+            const profile = businessProfile || {
+              businessName: "Sri Ganesha Tender Coconut & Fresh Fruit Juice",
+              merchantLocation: "Malleshwaram, Bangalore",
+              businessCategory: "Tender Coconut & Fruit Juice Stall",
+              targetLanguage: "Kannada"
+            };
+
+            const userUpdateInstruction = `The user updated the marketing manifest. New properties to sync: ${JSON.stringify(message.manifest)}. Analyze these context modifications, rewrite the session_manifest.json with updated slangs, event details, and copywriting strategy.`;
+            
+            const updatedManifestJson = await updateInteractionContext(currentInteractionId, userUpdateInstruction, profile);
+            console.log(`[Control Plane Swarm] Updated manifest output: ${updatedManifestJson}`);
+
+            let newParsedManifest = message.manifest || {
+              local_event: "Weekend Bakery Sale",
+              environmental_trigger: "Breezy afternoon",
+              neighborhood_slangs: "Boss, Macha",
+              recommended_copy_strategy: "Fresh pastries and cakes!"
+            };
+            try {
+              if (updatedManifestJson) {
+                newParsedManifest = JSON.parse(updatedManifestJson.replace(/```json|```/g, '').trim());
+              }
+            } catch (parseErr) {
+              console.warn('[Control Plane] Failed to parse updated manifest from swarm, using client payload directly.');
+            }
+
+            sendToClient({
+              type: 'AGENT_LOG',
+              agentName: 'Swarm Coordinator',
+              executionLog: `Synced context updates. New Copy Strategy: "${newParsedManifest.recommended_copy_strategy}"`
+            });
+
+            sendToClient({
+              type: 'MANIFEST_UPDATED',
+              manifest: newParsedManifest
+            });
+
+            if (liveSession) {
+              console.log('[Gemini Live Session] Injecting updated context manifest mid-stream...');
+              liveSession.sendClientContent({
+                turns: [
+                  {
+                    role: 'user',
+                    parts: [
+                      {
+                        text: `[System Instruction Update] The local context manifest has been updated. Here is the new active manifest: ${JSON.stringify(newParsedManifest)}. Please update your copy strategy, language tones, and responses accordingly in our conversation.`
+                      }
+                    ]
+                  }
+                ],
+                turnComplete: true
+              });
+              
+              sendToClient({
+                type: 'AGENT_LOG',
+                agentName: 'Gemini live engine',
+                executionLog: 'Context updated. Modulating response vectors.'
+              });
+            }
+          } catch (updateErr: any) {
+            console.error('[UPDATE_CONTEXT Error]:', updateErr);
+            sendToClient({
+              type: 'AGENT_LOG',
+              agentName: 'System Gate',
+              executionLog: `Context sync failed: ${updateErr.message || updateErr}`
             });
           }
           break;

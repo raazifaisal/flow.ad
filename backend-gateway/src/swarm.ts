@@ -1,6 +1,9 @@
 import { GoogleGenAI } from '@google/genai';
+import dotenv from 'dotenv';
 
-const ai = new GoogleGenAI({});
+dotenv.config();
+
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 interface BusinessProfile {
   businessName: string;
@@ -12,6 +15,18 @@ interface BusinessProfile {
 interface SwarmResult {
   interactionId: string;
   manifestJson: string;
+}
+
+/**
+ * Helper to wrap any promise with a timeout rejection.
+ */
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Interactions API timeout after ${timeoutMs}ms`)), timeoutMs)
+    )
+  ]);
 }
 
 /**
@@ -55,21 +70,23 @@ Synthesize this info and output a raw JSON payload containing:
 Output only the raw JSON. Do not include markdown code wrappers (e.g., \`\`\`json) or any conversational text.
 `;
 
-    console.log('[Swarm Ingestion] Connecting to Interactions API...');
-    const interaction = await (ai as any).interactions.create({
+    console.log('[Swarm Ingestion] Connecting to Interactions API with 15s timeout...');
+    const interactionPromise = (ai as any).interactions.create({
       agent: 'antigravity-preview-05-2026',
       input: swarmInstruction,
       environment: 'remote',
     });
 
+    const interaction = await withTimeout<any>(interactionPromise, 15000);
     console.log(`[Swarm Ingestion] Successfully created interaction: ${interaction.id}`);
     
+    const manifestText = (interaction as any).output_text || interaction.text || defaultManifest;
     return {
       interactionId: interaction.id || `mock_thread_${Date.now()}`,
-      manifestJson: interaction.text || defaultManifest
+      manifestJson: manifestText
     };
   } catch (error: any) {
-    console.warn('[Control Plane Exception] Swarm API failed. Fallback to baseline context:', error.message || error);
+    console.warn('[Control Plane Exception] Swarm API failed/timed out. Fallback to baseline context:', error.message || error);
     return {
       interactionId: `mock_thread_${Date.now()}`,
       manifestJson: defaultManifest
@@ -93,18 +110,19 @@ export async function updateInteractionContext(
   });
 
   try {
-    console.log(`[Swarm Context Update] Sending update to thread: ${interactionId}`);
+    console.log(`[Swarm Context Update] Sending update to thread: ${interactionId} with 15s timeout`);
     
-    const interaction = await (ai as any).interactions.create({
+    const interactionPromise = (ai as any).interactions.create({
       agent: 'antigravity-preview-05-2026',
       input: inputUpdate,
       interactionId: interactionId,
       environment: 'remote',
     });
 
-    return interaction.text || defaultManifest;
+    const interaction = await withTimeout<any>(interactionPromise, 15000);
+    return (interaction as any).output_text || interaction.text || defaultManifest;
   } catch (error: any) {
-    console.warn(`[Control Plane Exception] Failed to update interaction ${interactionId}:`, error.message || error);
+    console.warn(`[Control Plane Exception] Failed or timed out updating interaction ${interactionId}:`, error.message || error);
     return defaultManifest;
   }
 }

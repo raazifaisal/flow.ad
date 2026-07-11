@@ -34,6 +34,14 @@ class AudioService {
 
   public async startRecording(onChunk: (base64Data: string) => void): Promise<void> {
     if (this.isRecording) return;
+
+    // Guard: getUserMedia requires a secure context (HTTPS or localhost)
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+      const err = new Error('INSECURE_CONTEXT');
+      err.name = 'InsecureContextError';
+      throw err;
+    }
+
     this.isRecording = true;
 
     try {
@@ -50,7 +58,6 @@ class AudioService {
       this.micSource = this.audioContext.createMediaStreamSource(this.micStream);
 
       const bufferSize = 2048;
-      // ScriptProcessor is widely supported and simpler for rapid downsampling in hackathons
       this.processorNode = this.audioContext.createScriptProcessor(bufferSize, 1, 1);
       
       const inputSampleRate = this.audioContext.sampleRate;
@@ -59,8 +66,6 @@ class AudioService {
       this.processorNode.onaudioprocess = (e) => {
         if (!this.isRecording) return;
         const inputData = e.inputBuffer.getChannelData(0);
-        
-        // Downsample Float32 to 16kHz Int16 PCM
         const pcmData = this.downsampleAndEncodePCM(inputData, inputSampleRate, targetSampleRate);
         if (pcmData.length > 0) {
           const base64 = this.arrayBufferToBase64(pcmData.buffer as ArrayBuffer);
@@ -71,10 +76,10 @@ class AudioService {
       this.micSource.connect(this.processorNode);
       this.processorNode.connect(this.audioContext.destination);
       console.log(`[AudioService] Mic capture started. Downsampling from ${inputSampleRate}Hz to ${targetSampleRate}Hz.`);
-    } catch (err) {
+    } catch (err: any) {
       this.isRecording = false;
       console.error('[AudioService] Error starting audio capture:', err);
-      throw err;
+      throw err;  // always re-throw so App.tsx can show the banner
     }
   }
 
