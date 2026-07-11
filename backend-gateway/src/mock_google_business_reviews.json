@@ -1,0 +1,39 @@
+{
+  "reviews": [
+    {
+      "name": "accounts/112233/locations/445566/reviews/rev1",
+      "reviewId": "rev1",
+      "reviewer": {
+        "displayName": "Aarav Sharma",
+        "profilePhotoUrl": "https://lh3.googleusercontent.com/a-/AOh14G"
+      },
+      "starRating": "FIVE",
+      "comment": "Best croissants in Bangalore! Super buttery and flaky, tastes exactly like Parisian bakeries. Highly recommended.",
+      "createTime": "2026-07-10T10:00:00Z"
+    },
+    {
+      "name": "accounts/112233/locations/445566/reviews/rev2",
+      "reviewId": "rev2",
+      "reviewer": {
+        "displayName": "Sneha Reddy",
+        "profilePhotoUrl": "https://lh3.googleusercontent.com/a-/AOh14H"
+      },
+      "starRating": "FOUR",
+      "comment": "Loved the chocolate pastry, but it gets crowded during the afternoon. The staff is polite.",
+      "createTime": "2026-07-09T14:30:00Z"
+    },
+    {
+      "name": "accounts/112233/locations/445566/reviews/rev3",
+      "reviewId": "rev3",
+      "reviewer": {
+        "displayName": "Vikram Malhotra",
+        "profilePhotoUrl": "https://lh3.googleusercontent.com/a-/AOh14I"
+      },
+      "starRating": "THREE",
+      "comment": "Nice ambient space but slightly expensive. Coffee was good.",
+      "createTime": "2026-07-08T09:15:00Z"
+    }
+  ],
+  "totalReviewCount": 3,
+  "averageRating": 4.0
+}

@@ -86,18 +86,30 @@ wss.on('connection', (ws: WebSocket) => {
 
           // Load mock business profile context from local JSON
           const mockProfilePath = path.join(__dirname, 'mock_business_profile.json');
+          const mockReviewsPath = path.join(__dirname, 'mock_google_business_reviews.json');
+          const mockOrdersPath = path.join(__dirname, 'mock_whatsapp_orders.json');
+          
           let businessProfile = {
             businessName: "Sri Ganesha Tender Coconut & Fresh Fruit Juice",
             merchantLocation: "Malleshwaram, Bangalore",
             businessCategory: "Tender Coconut & Fruit Juice Stall",
             targetLanguage: "Kannada"
           };
+          let googleReviews = null;
+          let whatsappOrders = null;
+          
           try {
             if (fs.existsSync(mockProfilePath)) {
               businessProfile = JSON.parse(fs.readFileSync(mockProfilePath, 'utf8'));
             }
+            if (fs.existsSync(mockReviewsPath)) {
+              googleReviews = JSON.parse(fs.readFileSync(mockReviewsPath, 'utf8'));
+            }
+            if (fs.existsSync(mockOrdersPath)) {
+              whatsappOrders = JSON.parse(fs.readFileSync(mockOrdersPath, 'utf8'));
+            }
           } catch (err) {
-            console.warn('[INIT_SESSION] Failed to read mock business profile file, using baseline.');
+            console.warn('[INIT_SESSION] Failed to read mock business profile files, using baseline.');
           }
 
           sendToClient({
@@ -107,7 +119,7 @@ wss.on('connection', (ws: WebSocket) => {
           });
 
           // 1. Spawning context ingestion swarm asynchronously (Control Plane)
-          const swarmResult = await spawnContextIngestionSwarm(currentSessionId, businessProfile);
+          const swarmResult = await spawnContextIngestionSwarm(currentSessionId, businessProfile, googleReviews, whatsappOrders);
           currentInteractionId = swarmResult.interactionId;
           const manifestJson = swarmResult.manifestJson;
           console.log(`[Control Plane Swarm] Manifest output: ${manifestJson}`);

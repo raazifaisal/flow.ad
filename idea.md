@@ -109,15 +109,77 @@ Rather than operating in isolated sequences, the three agents communicate by rea
   │         ▼                         ▼                         ▼          │
   ┌───────────────────┐     ┌───────────────────┐     ┌────────────────────┐       │
   │  AGENT A: SCOUT   │     │ AGENT B: ARCHIVIST│     │ AGENT C: STRATEGIST│       │
-  │ (Geo/Weather/Web) │     │ (World Vibe Synth)│     │ (Slang & Keywords) │       │
+  │ (Geo/Weather/Web) │     │ (World Vibe Synth)│     │ (Slang/Margin Calc)│       │
   └───────────────────┘     └───────────────────┘     └────────────────────┘       │
   └────────────────────────────────────────────────────────────────────────┘
-
 ```
 
-* **Agent A (The Geo Scout):** Tracks ambient local metrics, scraping event sites, calendars, and local weather tables. *(Writes to manifest: High density gathering at nearby street market, sudden rain forecast).*
-* **Agent B (The Creative Archivist):** Evaluates Agent A's signals and applies Gemini's world knowledge to synthesize a dynamic visual design layout matching the product type and local weather (e.g. tropical vibes for hot days, warm colors for cold days) instead of using hardcoded templates.
-* **Agent C (The Slang Strategist):** Monitors neighborhood social activity and competitor storefronts, pulling high-resonance local slangs and idioms. *(Writes to manifest: Overriding formal copy blocks with region-specific tags like 'Machan' or 'Gethu').*
+* **Agent A (The Geo Scout):** Tracks ambient local metrics, scraping event sites (Eventbrite/Meetup), local subreddits (r/bangalore), and weather tables. It maps competitor hours, items, and pricing gaps (e.g., checking if *Zed The Baker* is closed or has high margins).
+* **Agent B (The Creative Archivist):** Evaluates Agent A's signals and applies Gemini's world knowledge to synthesize a dynamic visual design layout matching the product type and local weather (e.g. tropical vibes for hot days, warm colors for cold days).
+* **Agent C (The Slang Strategist & Margin Coordinator):** Pulls high-resonance local slangs and idioms. Crucially, it ingests native WhatsApp Cloud webhook orders and Google Business Profile reviews, then writes and executes a Python margin calculation script in the sandbox to model discount rates (10%, 15%, 20%) assuming a 1.5x volume boost. It then writes the optimal copy and price to `session_manifest.json`.
+
+### Ingested Data Schemas
+
+#### Google Business Profile Reviews Schema (`ListReviewsResponse`)
+The swarm digests customer feedback and ratings matching this JSON layout:
+```json
+{
+  "reviews": [
+    {
+      "name": "accounts/{accountId}/locations/{locationId}/reviews/{reviewId}",
+      "reviewId": "string",
+      "reviewer": { "displayName": "string", "profilePhotoUrl": "string" },
+      "starRating": "ONE | TWO | THREE | FOUR | FIVE",
+      "comment": "string",
+      "createTime": "string (Timestamp)"
+    }
+  ],
+  "totalReviewCount": "integer",
+  "averageRating": "double"
+}
+```
+
+#### WhatsApp Business Cloud API Order Webhook Schema
+The swarm digests past purchases and item velocity matching this incoming message shape:
+```json
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "string",
+      "changes": [
+        {
+          "value": {
+            "messaging_product": "whatsapp",
+            "contacts": [{ "profile": { "name": "string" }, "wa_id": "string" }],
+            "messages": [
+              {
+                "from": "string",
+                "id": "string",
+                "timestamp": "string",
+                "type": "order",
+                "order": {
+                  "catalog_id": "string",
+                  "text": "string",
+                  "product_items": [
+                    {
+                      "product_retailer_id": "string",
+                      "quantity": "string",
+                      "item_price": "string",
+                      "currency": "string"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "field": "messages"
+        }
+      ]
+    }
+  ]
+}
+```
 
 ---
 
