@@ -79,7 +79,7 @@ export default function App() {
   const startCam = async () => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setCamOn(false);
-      setPermError('Camera requires HTTPS. Open the ngrok https:// URL on your phone.');
+      setPermError('Camera requires a secure context (HTTPS) to function. Please access using "https://<your-local-ip>:5173" on your phone.');
       return;
     }
     try {
@@ -111,10 +111,26 @@ export default function App() {
 
   const checkMediaSupport = (): boolean => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      setPermError('Microphone requires HTTPS. Open the ngrok https:// URL on your phone.');
+      setPermError('Microphone requires a secure context (HTTPS) to function. Please access using "https://<your-local-ip>:5173" on your phone.');
       return false;
     }
     return true;
+  };
+
+  const requestPermissions = async () => {
+    try {
+      addLog('System', 'Proactively requesting microphone and camera permissions...');
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      // Stop the tracks immediately after receiving permission so we don't leave the camera on
+      stream.getTracks().forEach(track => track.stop());
+      setPermError(null);
+      addLog('System', 'Permissions granted successfully!');
+      // Trigger camera if it was toggled on
+      if (camOn) startCam();
+    } catch (err: any) {
+      console.warn('Proactive permissions failed:', err);
+      setPermError('Microphone/Camera permission required. Please click the lock 🔒 icon in your browser address bar and allow permissions.');
+    }
   };
 
   /* ── WebSocket ───────────────────────────────────────── */
@@ -307,14 +323,32 @@ export default function App() {
       {/* ── Permission error banner ── */}
       {permError && (
         <div style={{
-          flexShrink: 0, display: 'flex', alignItems: 'flex-start', gap: 10,
+          flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10,
           padding: '10px 14px', background: '#fff7ed',
           borderBottom: '1px solid #fed7aa', fontSize: 12, color: '#92400e', lineHeight: 1.4,
         }}>
           <span style={{ fontSize: 16, flexShrink: 0 }}>⚠️</span>
-          <span style={{ flex: 1 }}>{permError}</span>
+          <span style={{ flex: 1, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+            {permError}
+            <button
+              onClick={requestPermissions}
+              style={{
+                background: '#ea580c',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '4px 10px',
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              Grant Permissions
+            </button>
+          </span>
           <button onClick={() => setPermError(null)}
-            style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#92400e', fontSize: 16, padding: 0, lineHeight: 1 }}>
+            style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#92400e', fontSize: 16, padding: 0, lineHeight: 1, marginLeft: 'auto' }}>
             ✕
           </button>
         </div>
