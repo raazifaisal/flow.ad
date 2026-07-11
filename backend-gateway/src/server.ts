@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
-import { spawnContextIngestionSwarm, updateInteractionContext } from './swarm';
+import { spawnContextIngestionSwarm, updateInteractionContext, fetchReferenceAds } from './swarm';
 import { ClientMessage, ServerMessage } from './types';
 import {
   publishToWhatsApp,
@@ -34,7 +34,7 @@ const server = http.createServer((req, res) => {
   if (req.url?.startsWith('/public/')) {
     const filename = path.basename(req.url);
     const filePath = path.join(publicDir, filename);
-    
+
     fs.readFile(filePath, (err, data) => {
       if (err) {
         res.writeHead(404, { 'Content-Type': 'text/plain' });
@@ -58,6 +58,8 @@ wss.on('connection', (ws: WebSocket) => {
   let liveSession: any = null;
   let currentSessionId = 'unknown';
   let currentInteractionId = '';
+  let fetchedReferences = '';
+  let currentGenerationId = 0; // State variable to track and instantly abort stale generation processes
 
   console.log('[Client Connected]');
 
@@ -88,7 +90,7 @@ wss.on('connection', (ws: WebSocket) => {
           const mockProfilePath = path.join(__dirname, 'mock_business_profile.json');
           const mockReviewsPath = path.join(__dirname, 'mock_google_business_reviews.json');
           const mockOrdersPath = path.join(__dirname, 'mock_whatsapp_orders.json');
-          
+
           let businessProfile = {
             businessName: "Sri Ganesha Tender Coconut & Fresh Fruit Juice",
             merchantLocation: "Malleshwaram, Bangalore",
@@ -97,7 +99,7 @@ wss.on('connection', (ws: WebSocket) => {
           };
           let googleReviews = null;
           let whatsappOrders = null;
-          
+
           try {
             if (fs.existsSync(mockProfilePath)) {
               businessProfile = JSON.parse(fs.readFileSync(mockProfilePath, 'utf8'));
@@ -123,7 +125,7 @@ wss.on('connection', (ws: WebSocket) => {
           currentInteractionId = swarmResult.interactionId;
           const manifestJson = swarmResult.manifestJson;
           console.log(`[Control Plane Swarm] Manifest output: ${manifestJson}`);
-          
+
           let parsedManifest: any = {
             local_event: "IPL Local Screening Party at near market center",
             environmental_trigger: "High temperature, sunny afternoon",
@@ -146,19 +148,19 @@ wss.on('connection', (ws: WebSocket) => {
             agentName: 'Geo Scout',
             executionLog: `[Agent A] Analyzed ambient signals: local_event = "${parsedManifest.local_event}", environmental_trigger = "${parsedManifest.environmental_trigger}"`
           });
-          
+
           sendToClient({
             type: 'AGENT_LOG',
             agentName: 'Business intelligence Analyst',
             executionLog: `[Agent B] Ingested Google Business reviews and WhatsApp orders. Hero items identified: ${JSON.stringify(parsedManifest.hero_products)}. Sentiment: "${parsedManifest.customer_sentiments}"`
           });
-          
+
           sendToClient({
             type: 'AGENT_LOG',
             agentName: 'War-Room Financial Strategist',
             executionLog: `[Agent C] Scraped competitor status: "${parsedManifest.competitor_analysis}". Sandboxed Python simulation output: ${parsedManifest.pricing_simulation}`
           });
-          
+
           sendToClient({
             type: 'AGENT_LOG',
             agentName: 'Creative Brand Coordinator',
@@ -177,10 +179,24 @@ wss.on('connection', (ws: WebSocket) => {
               model: TARGET_LIVE_MODEL,
               config: {
                 responseModalities: [Modality.AUDIO],
-                systemInstruction: `Inject local context vectors from sandbox agent swarm: ${JSON.stringify(parsedManifest)}. Run real-time QA layers to enforce layout contrast limits. Use tools to generate and publish ads when user requests them. Prioritize local native Indian languages (such as Hindi, Tamil, Telugu, Kannada, etc.) and native scripts in copy strategy generation and verbal communication.`,
+                systemInstruction: `The sandbox agent swarm provides pre-session ambient variables: ${JSON.stringify(parsedManifest)}. Once the user declares what they want to advertise (e.g. key lime pie, 20% off for Christ University students on weekdays), you MUST extract the tags (business_category, ad_tone, focus_product, offer_details) at runtime and call the 'fetch_reference_ads' tool first to find relevant campaigns. Then use those references to call the 'generate_marketing_ad' tool. Run real-time QA layers to enforce layout contrast limits. Use tools to generate and publish ads when user requests them. Prioritize local native Indian languages and native scripts in copy strategy generation and verbal communication.`,
                 tools: [
                   {
                     functionDeclarations: [
+                      {
+                        name: 'fetch_reference_ads',
+                        description: 'Fetches real competitor reference ad campaigns based on user stated category, product, and tone tags at runtime.',
+                        parameters: {
+                          type: Type.OBJECT,
+                          properties: {
+                            business_category: { type: Type.STRING, description: 'Category of the business (e.g. bakery, cafe, boutique)' },
+                            ad_tone: { type: Type.STRING, description: 'Visual/copy tone of the ad (e.g. elegant, casual, minimal)' },
+                            focus_product: { type: Type.STRING, description: 'Name of the main product (e.g. key lime pie)' },
+                            offer_details: { type: Type.STRING, description: 'Optional discount details or specific promotions' }
+                          },
+                          required: ['business_category', 'ad_tone', 'focus_product']
+                        }
+                      },
                       {
                         name: 'generate_marketing_ad',
                         description: 'Generates a highly-localized marketing banner and video ad incorporating slangs and contextual triggers based on user instructions.',
@@ -226,6 +242,7 @@ wss.on('connection', (ws: WebSocket) => {
                   // Interruption Recovery Branch (Barge-In)
                   if (msg.serverContent?.interrupted) {
                     console.log(`[Interruption Alert] Barge-in detected on ${currentSessionId}`);
+                    currentGenerationId++; // Increment ID to instantly abort ongoing processes
                     sendToClient({
                       type: 'STATE_MUTATION',
                       state: 'BARGE_IN_FREEZE'
@@ -241,7 +258,93 @@ wss.on('connection', (ws: WebSocket) => {
                         const { name, args, id } = call;
                         console.log(`[Tool Call Received] Function: ${name}, Args:`, args);
 
-                        if (name === 'generate_marketing_ad') {
+                        if (name === 'fetch_reference_ads') {
+                          sendToClient({
+                            type: 'STATE_MUTATION',
+                            state: 'CREATIVE_PROCESSING'
+                          });
+
+                          sendToClient({
+                            type: 'AGENT_LOG',
+                            agentName: 'Reference Curator',
+                            executionLog: `[Agent E] Fetching dynamic competitor ad style references for category="${args.business_category}", product="${args.focus_product}", tone="${args.ad_tone}"...`
+                          });
+
+                          try {
+                            const refs = await fetchReferenceAds(
+                              args.business_category,
+                              args.ad_tone,
+                              args.focus_product,
+                              args.offer_details
+                            );
+                            fetchedReferences = refs;
+                            console.log(`[Agent E] Fetched references: ${refs}`);
+
+                            sendToClient({
+                              type: 'AGENT_LOG',
+                              agentName: 'Reference Curator',
+                              executionLog: `[Agent E] Curation completed. Loaded campaign reference resources.`
+                            });
+
+                            // Return response to Gemini Live Session
+                            liveSession.send({
+                              clientContent: {
+                                turnComplete: true,
+                                parts: [
+                                  {
+                                    functionResponse: {
+                                      name: 'fetch_reference_ads',
+                                      id: id,
+                                      response: {
+                                        output: {
+                                          status: 'success',
+                                          references: JSON.parse(refs)
+                                        }
+                                      }
+                                    }
+                                  }
+                                ]
+                              }
+                            });
+
+                          } catch (refErr: any) {
+                            console.error('[Reference curator Error]:', refErr);
+                            sendToClient({
+                              type: 'AGENT_LOG',
+                              agentName: 'Reference Curator',
+                              executionLog: `Reference curation failed: ${refErr.message || refErr}`
+                            });
+
+                            liveSession.send({
+                              clientContent: {
+                                turnComplete: true,
+                                parts: [
+                                  {
+                                    functionResponse: {
+                                      name: 'fetch_reference_ads',
+                                      id: id,
+                                      response: {
+                                        output: {
+                                          status: 'failed',
+                                          error: refErr.message || refErr
+                                        }
+                                      }
+                                    }
+                                  }
+                                ]
+                              }
+                            });
+                          } finally {
+                            sendToClient({
+                              type: 'STATE_MUTATION',
+                              state: 'STREAMING'
+                            });
+                          }
+                        }
+
+                        else if (name === 'generate_marketing_ad') {
+                          const execGenerationId = currentGenerationId;
+
                           sendToClient({
                             type: 'STATE_MUTATION',
                             state: 'CREATIVE_PROCESSING'
@@ -254,23 +357,28 @@ wss.on('connection', (ws: WebSocket) => {
                           });
 
                           try {
-                            // Update the stateful interaction thread in the sandbox before proceeding
+                            // Asynchronously update the stateful interaction thread in the sandbox (Twin-Track - Track 2)
+                            // This runs in the background and is NOT awaited here, saving 2-3 seconds of network roundtrip latency!
                             sendToClient({
                               type: 'AGENT_LOG',
                               agentName: 'Swarm Coordinator',
-                              executionLog: `Updating session interaction context with creative parameters...`
+                              executionLog: `Updating session interaction context with creative parameters (async)...`
                             });
 
                             const updateInstruction = `User requested creative generation. Focus Product: ${args.focus_product}, Background Color: ${args.background_color}, Overriding Copy: ${args.text_copy || 'None'}. Update design blueprint in session_manifest.json.`;
-                            const updatedManifestJson = await updateInteractionContext(currentInteractionId, updateInstruction, businessProfile);
-                            console.log(`[Control Plane Swarm] Updated manifest: ${updatedManifestJson}`);
-
-                            let updatedManifest = parsedManifest;
-                            try {
-                              updatedManifest = JSON.parse(updatedManifestJson.replace(/```json|```/g, '').trim());
-                            } catch (parseErr) {
-                              console.warn('[Control Plane] Failed to parse updated manifest, continuing with existing parameters.');
-                            }
+                            updateInteractionContext(currentInteractionId, updateInstruction, businessProfile)
+                              .then((updatedManifestJson) => {
+                                console.log(`[Control Plane Swarm - Async Sync Done] Updated manifest: ${updatedManifestJson}`);
+                                try {
+                                  const updatedManifest = JSON.parse(updatedManifestJson.replace(/```json|```/g, '').trim());
+                                  Object.assign(parsedManifest, updatedManifest);
+                                } catch (e) {
+                                  console.warn('[Control Plane - Async Sync] Failed to parse updated manifest background return.');
+                                }
+                              })
+                              .catch((err) => {
+                                console.error('[Control Plane - Async Sync Error]:', err);
+                              });
 
                             // Step A: Creative Director Prompt generation fork
                             sendToClient({
@@ -279,62 +387,174 @@ wss.on('connection', (ws: WebSocket) => {
                               executionLog: 'Building prompt blueprint for NB2 Lite layout engine...'
                             });
 
-                            const stillPrompt = `Create a high resolution 1K studio display square ad banner for ${args.focus_product} with a primary background color of ${args.background_color}. Integrate the following copy: "${args.text_copy || updatedManifest.recommended_copy_strategy}". Ensure professional typesetting and high contrast.`;
-                            const cinematicPrompt = `Create a high resolution 9:16 vertical mobile display ad reel banner for ${args.focus_product} with a primary background color of ${args.background_color}. Integrate the following copy: "${args.text_copy || updatedManifest.recommended_copy_strategy}". Optimized for social media reels, with clear central focus and contrast.`;
+                            let referencePromptAddition = '';
+                            if (fetchedReferences) {
+                              try {
+                                const parsedRefs = JSON.parse(fetchedReferences);
+                                if (Array.isArray(parsedRefs) && parsedRefs.length > 0) {
+                                  referencePromptAddition = ` Apply style hints from these suggestive ad campaign references: ${parsedRefs.map((r: any) => `[Vibe: ${r.visual_vibe}, Layout: ${r.description}]`).join('; ')}.`;
+                                }
+                              } catch (e) {
+                                console.warn('[Creative Chain] Failed to parse fetched reference details.');
+                              }
+                            }
+
+                            const stillPrompt = `Create a high resolution 1K studio display square ad banner for ${args.focus_product} with a primary background color of ${args.background_color}.${referencePromptAddition} Integrate the following copy: "${args.text_copy || parsedManifest.recommended_copy_strategy}". Ensure professional typesetting and high contrast.`;
+
+                            // 3 Cinematic keyframe storyboard prompts for vertical layout video ad reference
+                            const cinematicFrame1Prompt = `Create a high resolution 9:16 vertical mobile display ad keyframe for ${args.focus_product} closeup with a primary background color of ${args.background_color}.${referencePromptAddition} Focus purely on a detailed macro closeup shot of the fresh product, macro lighting, high contrast. No text overlays.`;
+                            const cinematicFrame2Prompt = `Create a high resolution 9:16 vertical mobile display ad keyframe for ${args.focus_product} with a primary background color of ${args.background_color}.${referencePromptAddition} Focus on displaying the text copy: "${args.text_copy || parsedManifest.recommended_copy_strategy}" clearly over the product presentation. Ensure readability and high typography contrast.`;
+                            const cinematicFrame3Prompt = `Create a high resolution 9:16 vertical mobile display ad keyframe for ${args.focus_product} with a primary background color of ${args.background_color}.${referencePromptAddition} Focus on a final elegant branding scene displaying the business name: "${businessProfile.businessName}" alongside the product.`;
+
+                            // Interruption Check
+                            if (execGenerationId !== currentGenerationId) {
+                              console.log(`[Interruption Check] Session ${currentSessionId} generation cancelled before image API request.`);
+                              return;
+                            }
 
                             // Step B: Invoke Imagen (NB2 Lite equivalent)
                             sendToClient({
                               type: 'AGENT_LOG',
                               agentName: 'NB2 Lite Image Fleet',
-                              executionLog: 'Generating Still (1:1) and Cinematic (9:16) advertisement graphics in parallel...'
+                              executionLog: 'Generating Still (1:1) and Cinematic storyboard keyframes (9:16) in parallel...'
                             });
 
-                            const [stillResponse, cinematicResponse] = await Promise.all([
-                              ai.models.generateImages({
-                                model: 'gemini-3.1-flash-lite-image',
-                                prompt: stillPrompt,
-                                config: {
-                                  numberOfImages: 1,
-                                  outputMimeType: 'image/jpeg',
-                                  aspectRatio: '1:1'
-                                }
-                              }),
-                              ai.models.generateImages({
-                                model: 'gemini-3.1-flash-lite-image',
-                                prompt: cinematicPrompt,
-                                config: {
-                                  numberOfImages: 1,
-                                  outputMimeType: 'image/jpeg',
-                                  aspectRatio: '9:16'
-                                }
-                              })
-                            ]);
+                            let stillResponse, frame1Response, frame2Response, frame3Response;
+                            try {
+                              [stillResponse, frame1Response, frame2Response, frame3Response] = await Promise.all([
+                                ai.models.generateImages({
+                                  model: 'gemini-3.1-flash-lite-image',
+                                  prompt: stillPrompt,
+                                  config: {
+                                    numberOfImages: 1,
+                                    outputMimeType: 'image/jpeg',
+                                    aspectRatio: '1:1'
+                                  }
+                                }),
+                                ai.models.generateImages({
+                                  model: 'gemini-3.1-flash-lite-image',
+                                  prompt: cinematicFrame1Prompt,
+                                  config: {
+                                    numberOfImages: 1,
+                                    outputMimeType: 'image/jpeg',
+                                    aspectRatio: '9:16'
+                                  }
+                                }),
+                                ai.models.generateImages({
+                                  model: 'gemini-3.1-flash-lite-image',
+                                  prompt: cinematicFrame2Prompt,
+                                  config: {
+                                    numberOfImages: 1,
+                                    outputMimeType: 'image/jpeg',
+                                    aspectRatio: '9:16'
+                                  }
+                                }),
+                                ai.models.generateImages({
+                                  model: 'gemini-3.1-flash-lite-image',
+                                  prompt: cinematicFrame3Prompt,
+                                  config: {
+                                    numberOfImages: 1,
+                                    outputMimeType: 'image/jpeg',
+                                    aspectRatio: '9:16'
+                                  }
+                                })
+                              ]);
+                            } catch (liteErr: any) {
+                              console.warn(`[NB2 Lite Image API Failure]: ${liteErr.message || liteErr}. Falling back to 'imagen-3.0-generate-002'...`);
+                              sendToClient({
+                                type: 'AGENT_LOG',
+                                agentName: 'NB2 Lite Image Fleet',
+                                executionLog: `Model gemini-3.1-flash-lite-image failed/unavailable. Failing over to imagen-3.0-generate-002...`
+                              });
+
+                              // Interruption check before executing fallback to avoid wasting quota/time
+                              if (execGenerationId !== currentGenerationId) {
+                                console.log(`[Interruption Check] Session ${currentSessionId} generation cancelled before fallback.`);
+                                return;
+                              }
+
+                              [stillResponse, frame1Response, frame2Response, frame3Response] = await Promise.all([
+                                ai.models.generateImages({
+                                  model: 'imagen-3.0-generate-002',
+                                  prompt: stillPrompt,
+                                  config: {
+                                    numberOfImages: 1,
+                                    outputMimeType: 'image/jpeg',
+                                    aspectRatio: '1:1'
+                                  }
+                                }),
+                                ai.models.generateImages({
+                                  model: 'imagen-3.0-generate-002',
+                                  prompt: cinematicFrame1Prompt,
+                                  config: {
+                                    numberOfImages: 1,
+                                    outputMimeType: 'image/jpeg',
+                                    aspectRatio: '9:16'
+                                  }
+                                }),
+                                ai.models.generateImages({
+                                  model: 'imagen-3.0-generate-002',
+                                  prompt: cinematicFrame2Prompt,
+                                  config: {
+                                    numberOfImages: 1,
+                                    outputMimeType: 'image/jpeg',
+                                    aspectRatio: '9:16'
+                                  }
+                                }),
+                                ai.models.generateImages({
+                                  model: 'imagen-3.0-generate-002',
+                                  prompt: cinematicFrame3Prompt,
+                                  config: {
+                                    numberOfImages: 1,
+                                    outputMimeType: 'image/jpeg',
+                                    aspectRatio: '9:16'
+                                  }
+                                })
+                              ]);
+                            }
+
+                            // Interruption Check
+                            if (execGenerationId !== currentGenerationId) {
+                              console.log(`[Interruption Check] Session ${currentSessionId} generation cancelled during image generation.`);
+                              return;
+                            }
 
                             const base64Still = stillResponse.generatedImages?.[0]?.image?.imageBytes;
-                            const base64Cinematic = cinematicResponse.generatedImages?.[0]?.image?.imageBytes;
-                            if (!base64Still || !base64Cinematic) {
-                              throw new Error('Image generation did not return image bytes for both formats');
+                            const base64F1 = frame1Response.generatedImages?.[0]?.image?.imageBytes;
+                            const base64F2 = frame2Response.generatedImages?.[0]?.image?.imageBytes;
+                            const base64F3 = frame3Response.generatedImages?.[0]?.image?.imageBytes;
+
+                            if (!base64Still || !base64F1 || !base64F2 || !base64F3) {
+                              throw new Error('Image generation did not return image bytes for all keyframes');
                             }
 
                             // Save the images locally to public directory
                             const stillFilename = `still_${currentSessionId}.jpg`;
-                            const cinematicFilename = `cinematic_${currentSessionId}.jpg`;
-                            
+                            const f1Filename = `cinematic_frame1_${currentSessionId}.jpg`;
+                            const f2Filename = `cinematic_frame2_${currentSessionId}.jpg`;
+                            const f3Filename = `cinematic_frame3_${currentSessionId}.jpg`;
+
                             const stillPath = path.join(publicDir, stillFilename);
-                            const cinematicPath = path.join(publicDir, cinematicFilename);
-                            
+                            const f1Path = path.join(publicDir, f1Filename);
+                            const f2Path = path.join(publicDir, f2Filename);
+                            const f3Path = path.join(publicDir, f3Filename);
+
                             fs.writeFileSync(stillPath, Buffer.from(base64Still, 'base64'));
-                            fs.writeFileSync(cinematicPath, Buffer.from(base64Cinematic, 'base64'));
+                            fs.writeFileSync(f1Path, Buffer.from(base64F1, 'base64'));
+                            fs.writeFileSync(f2Path, Buffer.from(base64F2, 'base64'));
+                            fs.writeFileSync(f3Path, Buffer.from(base64F3, 'base64'));
 
                             const stillUrl = `http://localhost:${PORT}/public/${stillFilename}`;
-                            const cinematicUrl = `http://localhost:${PORT}/public/${cinematicFilename}`;
-                            
-                            console.log(`[Media Generation] Saved generated ads to ${stillPath} and ${cinematicPath}`);
+                            const f1Url = `http://localhost:${PORT}/public/${f1Filename}`;
+                            const f2Url = `http://localhost:${PORT}/public/${f2Filename}`;
+                            const f3Url = `http://localhost:${PORT}/public/${f3Filename}`;
+
+                            console.log(`[Media Generation] Saved generated keyframes to public directory`);
 
                             sendToClient({
                               type: 'AGENT_LOG',
                               agentName: 'NB2 Lite Image Fleet',
-                              executionLog: `Still banner (1:1) and Cinematic reel (9:16) rendered successfully.`
+                              executionLog: `Still ad (1:1) and 3 Cinematic video keyframes (9:16) generated successfully.`
                             });
 
                             // Step C: Run Gemini 3.5 Flash Visual QA Supervisor loop
@@ -343,6 +563,12 @@ wss.on('connection', (ws: WebSocket) => {
                               agentName: 'QA Supervisor',
                               executionLog: 'Starting visual layout and typography contrast audit on Still image...'
                             });
+
+                            // Interruption Check
+                            if (execGenerationId !== currentGenerationId) {
+                              console.log(`[Interruption Check] Session ${currentSessionId} generation cancelled before QA audit.`);
+                              return;
+                            }
 
                             const qaInstruction = `
 You are the Automated Production Supervisor. Analyze this incoming media frame against design constraints:
@@ -382,11 +608,17 @@ Output exactly a JSON object containing: {"compliant": boolean, "required_adjust
                               });
                             }
 
+                            // Final Interruption Check before sending assets to client
+                            if (execGenerationId !== currentGenerationId) {
+                              console.log(`[Interruption Check] Session ${currentSessionId} generation cancelled during QA audit.`);
+                              return;
+                            }
+
                             // Step D: Gemini Omni Flash vertical video compilation
                             sendToClient({
                               type: 'AGENT_LOG',
                               agentName: 'Gemini Omni Flash',
-                              executionLog: 'Packaging layout timeline into motion and cinematic reels...'
+                              executionLog: 'Injecting 3 keyframes as visual references into Omni Flash video pipeline...'
                             });
 
                             // Send preview URL down to client
@@ -394,7 +626,8 @@ Output exactly a JSON object containing: {"compliant": boolean, "required_adjust
                               type: 'AD_PREVIEW',
                               url: stillUrl,
                               stillUrl: stillUrl,
-                              cinematicUrl: cinematicUrl
+                              cinematicUrl: f2Url, // Frame 2 (text layout) as primary cinematic preview
+                              keyframes: [f1Url, f2Url, f3Url]
                             });
 
                             // Return response to Gemini Live Session
@@ -411,7 +644,8 @@ Output exactly a JSON object containing: {"compliant": boolean, "required_adjust
                                           status: 'success',
                                           ad_preview_url: stillUrl,
                                           still_url: stillUrl,
-                                          cinematic_url: cinematicUrl
+                                          cinematic_url: f2Url,
+                                          keyframes: [f1Url, f2Url, f3Url]
                                         }
                                       }
                                     }
@@ -427,10 +661,13 @@ Output exactly a JSON object containing: {"compliant": boolean, "required_adjust
                               executionLog: `Generation pipeline exception: ${genErr.message || genErr}`
                             });
                           } finally {
-                            sendToClient({
-                              type: 'STATE_MUTATION',
-                              state: 'STREAMING'
-                            });
+                            // Only set streaming back if we haven't been interrupted and another generation isn't active
+                            if (execGenerationId === currentGenerationId) {
+                              sendToClient({
+                                type: 'STATE_MUTATION',
+                                state: 'STREAMING'
+                              });
+                            }
                           }
                         }
 
@@ -515,6 +752,24 @@ Output exactly a JSON object containing: {"compliant": boolean, "required_adjust
             sendToClient({
               type: 'STATE_MUTATION',
               state: 'DISCONNECTED'
+            });
+          }
+          break;
+
+        case 'TEXT_INPUT':
+          if (liveSession && message.text) {
+            console.log(`[TEXT_INPUT] Routing text to Live session: "${message.text}"`);
+            currentGenerationId++; // Increment generation ID to abort any active generation immediately
+            liveSession.send({
+              clientContent: {
+                turns: [
+                  {
+                    role: 'user',
+                    parts: [{ text: message.text }]
+                  }
+                ],
+                turnComplete: true
+              }
             });
           }
           break;

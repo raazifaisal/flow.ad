@@ -22,7 +22,7 @@ function extractTextFromInteraction(interaction: any): string | null {
   if (interaction.text) return interaction.text;
   if (interaction.outputText) return interaction.outputText;
   if (interaction.output_text) return interaction.output_text;
-  
+
   if (interaction.steps && Array.isArray(interaction.steps)) {
     for (const step of interaction.steps) {
       if (step.modelOutput?.parts) {
@@ -129,12 +129,12 @@ Do not include markdown wrappers (e.g., \`\`\`json) or any conversational text.
     });
 
     console.log(`[Swarm Ingestion] Successfully created interaction: ${interaction.id}`);
-    
+
     const extractedText = extractTextFromInteraction(interaction);
     console.log('[Swarm Ingestion] Extracted manifest text:', extractedText);
-    
+
     const manifestJson = extractedText || defaultManifest;
-    
+
     return {
       interactionId: interaction.id || `mock_thread_${Date.now()}`,
       manifestJson: manifestJson
@@ -165,7 +165,7 @@ export async function updateInteractionContext(
 
   try {
     console.log(`[Swarm Context Update] Sending update to thread: ${interactionId}`);
-    
+
     const interaction = await (ai as any).interactions.create({
       agent: 'antigravity-preview-05-2026',
       input: inputUpdate,
@@ -179,5 +179,72 @@ export async function updateInteractionContext(
   } catch (error: any) {
     console.warn(`[Control Plane Exception] Failed to update interaction ${interactionId}:`, error.message || error);
     return defaultManifest;
+  }
+}
+
+/**
+ * Agent E: Reference Ad Curator.
+ * Searches the web for real-world competitor/category reference ad campaigns matching the dynamic runtime tags.
+ */
+export async function fetchReferenceAds(
+  businessCategory: string,
+  adTone: string,
+  focusProduct: string,
+  offerDetails?: string
+): Promise<string> {
+  const defaultReferences = JSON.stringify([
+    {
+      headline: `Fresh ${focusProduct} Daily`,
+      description: `Delicious handcrafted ${focusProduct} prepared with premium ingredients.`,
+      visual_vibe: `Classy, elegant display with soft lighting and product focus.`,
+      reference_url: `http://localhost:50051/public/fallback_ref.jpg`
+    }
+  ]);
+
+  try {
+    const referenceQueryInstruction = `
+Context Flag: System Container Initialization Engine
+Target Environment: Remote Linux Sandbox
+Core Task: Agent E (Reference Ad Curator) Dynamic Web Curation
+
+You are Agent E, the Reference Ad Curator. Your objective is to find real competitor campaigns, promotional structures, and style guidelines matching the following dynamic target tags:
+- Business Category: ${businessCategory}
+- Inferred Ad Tone: ${adTone}
+- Focus Product: ${focusProduct}
+- Specific Offer/Details: ${offerDetails || 'None'}
+
+Using the google_search tool:
+1. Search for successful digital ads, Instagram visual designs, and copy layout references for "${focusProduct}" within "${businessCategory}".
+2. Identify target visual elements, color schemes, and layout formats.
+3. Extract reference descriptions and style guides.
+
+Compile your findings into a single raw JSON array containing exactly three reference ad items with these keys:
+[
+  {
+    "headline": "inspirational copy slogan or headline",
+    "description": "description of the ad layout, text overlay, and copy direction",
+    "visual_vibe": "suggestive design styles, colors, and layout structure (e.g. minimalist gold accents, macro lighting)",
+    "reference_url": "valid placeholder or web URL for style lookup"
+  }
+]
+
+Do not include markdown wrappers (e.g., \`\`\`json) or any conversational text. Output only the raw valid JSON payload.
+`;
+
+    console.log('[Swarm Ingestion] Initializing Agent E (Reference Ad Curator) sandbox query...');
+    const interaction = await (ai as any).interactions.create({
+      agent: 'antigravity-preview-05-2026',
+      input: referenceQueryInstruction,
+      environment: 'remote',
+    });
+
+    console.log(`[Swarm Ingestion] Agent E created interaction: ${interaction.id}`);
+    const extractedText = extractTextFromInteraction(interaction);
+    console.log('[Swarm Ingestion] Agent E extracted references:', extractedText);
+
+    return extractedText || defaultReferences;
+  } catch (error: any) {
+    console.warn('[Control Plane Exception] Agent E sandbox fetch failed. Fallback to baseline references:', error.message || error);
+    return defaultReferences;
   }
 }

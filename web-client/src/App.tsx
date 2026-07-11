@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { 
-  Play, 
-  Square, 
-  Video, 
-  Terminal, 
-  Share2, 
+import {
+  Play,
+  Square,
+  Video,
+  Terminal,
+  Share2,
   ExternalLink,
   Zap,
   Sparkles,
@@ -26,11 +26,30 @@ export default function App() {
   const [adUrl, setAdUrl] = useState<string | null>(null);
   const [stillAdUrl, setStillAdUrl] = useState<string | null>(null);
   const [cinematicAdUrl, setCinematicAdUrl] = useState<string | null>(null);
+  const [keyframes, setKeyframes] = useState<string[]>([]);
+  const [activeKeyframeIndex, setActiveKeyframeIndex] = useState<number>(0);
   const [activeCreativeTab, setActiveCreativeTab] = useState<'still' | 'motion' | 'cinematic'>('still');
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
   const [sessionId] = useState<string>(() => `session_${Date.now()}`);
+  const [textCommand, setTextCommand] = useState<string>('');
 
   const wsRef = useRef<WebSocket | null>(null);
+
+  const sendTextCommand = () => {
+    if (!textCommand.trim()) return;
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      appendLedger('You (Text Command)', textCommand);
+      wsRef.current.send(
+        JSON.stringify({
+          type: 'TEXT_INPUT',
+          text: textCommand
+        })
+      );
+      setTextCommand('');
+    } else {
+      appendLedger('System Controller', 'Cannot send command. Live Session is disconnected.');
+    }
+  };
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const ledgerEndRef = useRef<HTMLDivElement | null>(null);
@@ -49,6 +68,15 @@ export default function App() {
   useEffect(() => {
     ledgerEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [ledger]);
+
+  // Loop through keyframes for cinematic ad preview cross-fade simulation
+  useEffect(() => {
+    if (activeCreativeTab !== 'cinematic' || keyframes.length === 0) return;
+    const interval = setInterval(() => {
+      setActiveKeyframeIndex((prev) => (prev + 1) % keyframes.length);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [activeCreativeTab, keyframes]);
 
   const enableCamera = async () => {
     try {
@@ -138,6 +166,8 @@ export default function App() {
             if (message.stillUrl) {
               setStillAdUrl(message.stillUrl);
               setCinematicAdUrl(message.cinematicUrl || null);
+              setKeyframes(message.keyframes || []);
+              setActiveKeyframeIndex(0);
               setAdUrl(message.stillUrl);
               setActiveCreativeTab('still');
               setRuntimeState('CREATIVE_PROCESSING');
@@ -145,6 +175,8 @@ export default function App() {
             } else if (message.url) {
               setStillAdUrl(message.url);
               setAdUrl(message.url);
+              setKeyframes([]);
+              setActiveKeyframeIndex(0);
               setActiveCreativeTab('still');
               setRuntimeState('CREATIVE_PROCESSING');
               appendLedger('Creative Director', `New dynamic ad asset compiled: ${message.url}`);
@@ -181,7 +213,7 @@ export default function App() {
     if (wsRef.current) {
       try {
         wsRef.current.send(JSON.stringify({ type: 'USER_CANCEL' }));
-      } catch (e) {}
+      } catch (e) { }
       wsRef.current.close();
       wsRef.current = null;
     }
@@ -211,7 +243,7 @@ export default function App() {
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
           // Export as base64 JPEG
           const base64Image = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
-          
+
           wsRef.current.send(
             JSON.stringify({
               type: 'VIDEO_INPUT',
@@ -261,19 +293,19 @@ export default function App() {
 
       {/* Main Workspace Layout */}
       <main style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 400px', gap: '20px', padding: '0 16px 16px', overflow: 'hidden' }}>
-        
+
         {/* Left Side: Live Spatial Viewport Camera Feed */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', position: 'relative' }}>
-          <div 
+          <div
             className={`glass-dark ${runtimeState === 'STREAMING' ? 'active-viewport' : runtimeState === 'BARGE_IN_FREEZE' ? 'barge-in-viewport' : ''}`}
             style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', justifyContent: 'center', alignItems: 'center', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.08)' }}
           >
             {/* Native HTML5 Video Element representing camera viewport */}
-            <video 
-              ref={videoRef} 
-              autoPlay 
-              playsInline 
-              muted 
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
               style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }}
             />
 
@@ -358,9 +390,9 @@ export default function App() {
               </span>
             </div>
 
-            <button 
-              onClick={toggleStream} 
-              className="glass" 
+            <button
+              onClick={toggleStream}
+              className="glass"
               style={{
                 padding: '12px 28px',
                 display: 'flex',
@@ -388,11 +420,52 @@ export default function App() {
               )}
             </button>
           </div>
+
+          {/* Real-time Text Command Input for Multi-Turn Interruption Testing */}
+          {runtimeState !== 'DISCONNECTED' && (
+            <div className="glass" style={{ padding: '12px 24px', display: 'flex', gap: '12px', alignItems: 'center' }}>
+              <input
+                type="text"
+                value={textCommand}
+                onChange={(e) => setTextCommand(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') sendTextCommand(); }}
+                placeholder="Type dynamic instruction (e.g. 'Make a neon-green coconut ad', or stop with 'Wait, make it blue instead')"
+                style={{
+                  flex: 1,
+                  background: 'rgba(255,255,255,0.03)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '12px',
+                  padding: '12px 16px',
+                  color: '#fff',
+                  fontSize: '14px',
+                  outline: 'none',
+                  transition: 'border-color 0.2s'
+                }}
+              />
+              <button
+                onClick={sendTextCommand}
+                className="glass"
+                style={{
+                  padding: '12px 24px',
+                  cursor: 'pointer',
+                  backgroundColor: 'rgba(6, 182, 212, 0.15)',
+                  borderColor: 'var(--color-cyan)',
+                  color: '#fff',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  borderRadius: '12px',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                Send Command
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Right Side Column: Swarm agentic thoughts and outputs */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          
+
           {/* Box 1: Handoff Ledger (Agent Swarm Activity Log) */}
           <div className="glass-dark" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '20px', border: '1px solid rgba(255,255,255,0.06)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
@@ -401,7 +474,7 @@ export default function App() {
                 Antigravity Agentic Ledger
               </h2>
             </div>
-            
+
             <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingRight: '4px' }}>
               {ledger.length === 0 ? (
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: '8px', color: 'var(--text-muted)' }}>
@@ -444,7 +517,7 @@ export default function App() {
 
               {/* Multi-Format Tabs */}
               <div style={{ display: 'flex', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '8px', gap: '16px' }}>
-                <button 
+                <button
                   onClick={() => setActiveCreativeTab('still')}
                   style={{
                     background: 'none',
@@ -460,7 +533,7 @@ export default function App() {
                 >
                   Still Ad (1:1)
                 </button>
-                <button 
+                <button
                   onClick={() => setActiveCreativeTab('motion')}
                   style={{
                     background: 'none',
@@ -476,7 +549,7 @@ export default function App() {
                 >
                   Motion Ad (Anim)
                 </button>
-                <button 
+                <button
                   onClick={() => setActiveCreativeTab('cinematic')}
                   style={{
                     background: 'none',
@@ -507,20 +580,85 @@ export default function App() {
                     <img className="motion-ad-zoom" src={stillAdUrl} alt="Motion Ad Preview" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                   </div>
                 )}
-                {activeCreativeTab === 'cinematic' && cinematicAdUrl && (
+                {activeCreativeTab === 'cinematic' && keyframes.length > 0 ? (
                   <div style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', display: 'flex', justifyContent: 'center' }}>
-                    <img className="cinematic-ad-pan" src={cinematicAdUrl} alt="Cinematic Ad Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <img
+                      key={activeKeyframeIndex}
+                      className="cinematic-ad-pan"
+                      src={keyframes[activeKeyframeIndex]}
+                      alt={`Cinematic Frame ${activeKeyframeIndex + 1}`}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                    <div style={{
+                      position: 'absolute',
+                      bottom: '8px',
+                      left: '8px',
+                      backgroundColor: 'rgba(0,0,0,0.6)',
+                      color: 'var(--color-cyan)',
+                      fontSize: '11px',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      fontFamily: 'var(--font-mono)'
+                    }}>
+                      STORYBOARD: FRAME {activeKeyframeIndex + 1}/3
+                    </div>
                   </div>
+                ) : (
+                  activeCreativeTab === 'cinematic' && cinematicAdUrl && (
+                    <div style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', display: 'flex', justifyContent: 'center' }}>
+                      <img className="cinematic-ad-pan" src={cinematicAdUrl} alt="Cinematic Ad Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    </div>
+                  )
                 )}
               </div>
 
+              {/* Optional Keyframe Storyboard Filmstrip */}
+              {activeCreativeTab === 'cinematic' && keyframes.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '12px' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                    Omni Flash Reel Timeline Pipeline (Suggestive Reference Keyframes)
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                    {keyframes.map((url, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => setActiveKeyframeIndex(idx)}
+                        style={{
+                          cursor: 'pointer',
+                          border: activeKeyframeIndex === idx ? '2px solid var(--color-cyan)' : '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '8px',
+                          overflow: 'hidden',
+                          position: 'relative',
+                          height: '60px',
+                          opacity: activeKeyframeIndex === idx ? 1 : 0.6
+                        }}
+                      >
+                        <img src={url} alt={`Frame ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <div style={{
+                          position: 'absolute',
+                          top: '2px',
+                          left: '2px',
+                          fontSize: '8px',
+                          backgroundColor: 'rgba(0,0,0,0.7)',
+                          color: '#fff',
+                          padding: '1px 4px',
+                          borderRadius: '2px'
+                        }}>
+                          F{idx + 1}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Dispatch trigger buttons */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <a 
+                <a
                   href={`https://wa.me/?text=${encodeURIComponent('Check out this new ad listing: ' + adUrl)}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="glass" 
+                  className="glass"
                   style={{
                     padding: '10px',
                     display: 'flex',
@@ -539,9 +677,9 @@ export default function App() {
                   <Share2 size={14} />
                   WhatsApp
                 </a>
-                <button 
+                <button
                   onClick={() => window.open(adUrl, '_blank')}
-                  className="glass" 
+                  className="glass"
                   style={{
                     padding: '10px',
                     display: 'flex',
