@@ -9,18 +9,36 @@ const ai = new GoogleGenAI({});
  */
 export async function spawnContextIngestionSwarm(sessionId: string): Promise<string> {
   try {
+    const swarmInstruction = `
+Context Flag: System Container Initialization Engine
+Target Environment: Remote Linux Sandbox
+Core Task: Multi-Agent Localized Trend Analysis
+
+You are the Federated Swarm Coordinator governing three internal execution tasks. You have access to the google_search grounding tool. Read and write your progress parameters to the shared memory object 'session_manifest.json'.
+
+Perform the following system iterations:
+1. Initialize Agent A (The Geo Scout): Query the search tool using target context for session instance: ${sessionId}. Identify immediate local events, college festivals, neighborhood sports matches, and localized weather fluctuations happening within a 2-kilometer grid today.
+2. Initialize Agent B (The Creative Archivist): Analyze Agent A's findings. Select the optimal design template parameters and visual layout tokens from your internal library that match the current environmental vibe.
+3. Initialize Agent C (The Slang Strategist): Scan nearby public business markers and social feeds. Extract highly active regional slangs, localized keywords, and popular idioms unique to this specific market zone.
+
+Consolidate all values into a single, clean JSON string containing exclusively the keys:
+'local_event', 'environmental_trigger', 'neighborhood_slangs', and 'recommended_copy_strategy'.
+
+Constraint Check: Do not include markdown code wrappers (e.g., \`\`\`json) or any conversational text strings. Output only the raw valid JSON payload.
+`;
+
     // Note: The 'interactions' endpoint is a preview feature in antigravity environments.
-    // If it fails or is not present on the SDK instance, we catch and fall back safely.
     const interaction = await (ai as any).interactions.create({
       agent: 'antigravity-preview-05-2026',
-      input: `Execute localized trend crawls, calendar scans, and geo-landmark sweeps for session instance: ${sessionId}`,
+      input: swarmInstruction,
       environment: 'remote',
       background: true, // Enables async worker pattern execution
     });
     
+    console.log(`[Swarm Ingestion] Successfully created interaction: ${interaction.id}`);
     return interaction.id; // Returns context interaction token anchor
-  } catch (error) {
-    console.warn('[Control Plane Exception] Swarm API not available. Fallback to default baseline context:', error);
+  } catch (error: any) {
+    console.warn('[Control Plane Exception] Swarm API not available. Fallback to default baseline context:', error.message || error);
     return 'default_regional_base_cache';
   }
 }
