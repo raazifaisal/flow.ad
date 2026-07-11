@@ -7,12 +7,6 @@ interface BusinessProfile {
   merchantLocation: string;
   businessCategory: string;
   targetLanguage: string;
-  mockContext?: {
-    local_event: string;
-    environmental_trigger: string;
-    neighborhood_slangs: string;
-    recommended_copy_strategy: string;
-  };
 }
 
 interface SwarmResult {
@@ -21,29 +15,20 @@ interface SwarmResult {
 }
 
 /**
- * Helper to wrap a promise with a timeout.
- */
-function withTimeout(promise: Promise<any>, ms: number, timeoutError: Error): Promise<any> {
-  return Promise.race([
-    promise,
-    new Promise<any>((_, reject) => setTimeout(() => reject(timeoutError), ms))
-  ]);
-}
-
-/**
  * Control Plane Architecture: Initializes a stateful sandbox interaction thread
- * and runs Agent A, B, and C with a resilient 45-second timeout guard.
- * Fallbacks are dynamically loaded from the mock profile JSON.
+ * and runs Agent A, B, and C. The swarm uses the google_search tool in the remote sandbox
+ * to dynamically query weather, events, and slang for the merchant's location.
  */
 export async function spawnContextIngestionSwarm(
   sessionId: string,
   profile: BusinessProfile
 ): Promise<SwarmResult> {
+  // Simple baseline fallback in case of connection exceptions
   const defaultManifest = JSON.stringify({
-    local_event: profile.mockContext?.local_event || "Local Market Sale",
-    environmental_trigger: profile.mockContext?.environmental_trigger || "Sunny weather",
-    neighborhood_slangs: profile.mockContext?.neighborhood_slangs || "None",
-    recommended_copy_strategy: profile.mockContext?.recommended_copy_strategy || `Visit ${profile.businessName} today!`
+    local_event: "Weekend Bakery Sale",
+    environmental_trigger: "Breezy afternoon",
+    neighborhood_slangs: "Boss, Macha",
+    recommended_copy_strategy: `Fresh pastries and cakes at ${profile.businessName}!`
   });
 
   try {
@@ -71,17 +56,11 @@ Output only the raw JSON. Do not include markdown code wrappers (e.g., \`\`\`jso
 `;
 
     console.log('[Swarm Ingestion] Connecting to Interactions API...');
-    const interactionPromise = (ai as any).interactions.create({
+    const interaction = await (ai as any).interactions.create({
       agent: 'antigravity-preview-05-2026',
       input: swarmInstruction,
       environment: 'remote',
     });
-
-    const interaction = await withTimeout(
-      interactionPromise,
-      45000,
-      new Error('Interactions API request timed out')
-    );
 
     console.log(`[Swarm Ingestion] Successfully created interaction: ${interaction.id}`);
     
@@ -90,7 +69,7 @@ Output only the raw JSON. Do not include markdown code wrappers (e.g., \`\`\`jso
       manifestJson: interaction.text || defaultManifest
     };
   } catch (error: any) {
-    console.warn('[Control Plane Exception] Swarm API failed or timed out. Fallback to baseline context:', error.message || error);
+    console.warn('[Control Plane Exception] Swarm API failed. Fallback to baseline context:', error.message || error);
     return {
       interactionId: `mock_thread_${Date.now()}`,
       manifestJson: defaultManifest
@@ -99,7 +78,7 @@ Output only the raw JSON. Do not include markdown code wrappers (e.g., \`\`\`jso
 }
 
 /**
- * Appends context updates to the existing stateful interaction thread in the sandbox with a 25-second timeout guard.
+ * Appends context updates to the existing stateful interaction thread in the sandbox.
  */
 export async function updateInteractionContext(
   interactionId: string,
@@ -107,27 +86,21 @@ export async function updateInteractionContext(
   profile: BusinessProfile
 ): Promise<string> {
   const defaultManifest = JSON.stringify({
-    local_event: profile.mockContext?.local_event || "Local Market Sale",
-    environmental_trigger: profile.mockContext?.environmental_trigger || "Sunny weather",
-    neighborhood_slangs: profile.mockContext?.neighborhood_slangs || "None",
-    recommended_copy_strategy: profile.mockContext?.recommended_copy_strategy || `Visit ${profile.businessName} today!`
+    local_event: "Weekend Bakery Sale",
+    environmental_trigger: "Breezy afternoon",
+    neighborhood_slangs: "Boss, Macha",
+    recommended_copy_strategy: `Fresh pastries and cakes at ${profile.businessName}!`
   });
 
   try {
     console.log(`[Swarm Context Update] Sending update to thread: ${interactionId}`);
     
-    const interactionPromise = (ai as any).interactions.create({
+    const interaction = await (ai as any).interactions.create({
       agent: 'antigravity-preview-05-2026',
       input: inputUpdate,
       interactionId: interactionId,
       environment: 'remote',
     });
-
-    const interaction = await withTimeout(
-      interactionPromise,
-      25000,
-      new Error('Interaction update request timed out')
-    );
 
     return interaction.text || defaultManifest;
   } catch (error: any) {
