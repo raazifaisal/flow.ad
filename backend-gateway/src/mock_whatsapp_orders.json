@@ -1,0 +1,93 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "waba_12345",
+      "changes": [
+        {
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "+919876543210",
+              "phone_number_id": "phone_98765"
+            },
+            "contacts": [
+              {
+                "profile": { "name": "Rahul" },
+                "wa_id": "919000000001"
+              }
+            ],
+            "messages": [
+              {
+                "from": "919000000001",
+                "id": "msg_001",
+                "timestamp": "1783756103",
+                "type": "order",
+                "order": {
+                  "catalog_id": "cat_bake",
+                  "text": "Can you deliver 2 butter croissants and 1 cold brew coffee?",
+                  "product_items": [
+                    {
+                      "product_retailer_id": "item_croissant_butter",
+                      "quantity": "2",
+                      "item_price": "180.00",
+                      "currency": "INR"
+                    },
+                    {
+                      "product_retailer_id": "item_cold_brew",
+                      "quantity": "1",
+                      "item_price": "220.00",
+                      "currency": "INR"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "field": "messages"
+        }
+      ]
+    },
+    {
+      "id": "waba_12345",
+      "changes": [
+        {
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "+919876543210",
+              "phone_number_id": "phone_98765"
+            },
+            "contacts": [
+              {
+                "profile": { "name": "Karthik" },
+                "wa_id": "919000000002"
+              }
+            ],
+            "messages": [
+              {
+                "from": "919000000002",
+                "id": "msg_002",
+                "timestamp": "1783756200",
+                "type": "order",
+                "order": {
+                  "catalog_id": "cat_bake",
+                  "text": "Need 1 chocolate pastry",
+                  "product_items": [
+                    {
+                      "product_retailer_id": "item_pastry_chocolate",
+                      "quantity": "1",
+                      "item_price": "150.00",
+                      "currency": "INR"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "field": "messages"
+        }
+      ]
+    }
+  ]
+}

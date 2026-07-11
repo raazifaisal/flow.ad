@@ -1,5 +1,5 @@
 {
-  "name": "bharatflow-backend-gateway",
+  "name": "flow-ad-backend-gateway",
   "version": "1.0.0",
   "description": "WebSocket to Gemini Live API Streaming Gateway",
   "main": "dist/server.js",
