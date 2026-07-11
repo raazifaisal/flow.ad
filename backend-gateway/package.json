@@ -1,0 +1,22 @@
+{
+  "name": "bharatflow-backend-gateway",
+  "version": "1.0.0",
+  "description": "WebSocket to Gemini Live API Streaming Gateway",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "ts-node src/server.ts",
+    "serve": "node dist/server.js"
+  },
+  "dependencies": {
+    "@google/genai": "^2.3.0",
+    "dotenv": "^16.4.5",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/ws": "^8.5.10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
