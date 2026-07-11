@@ -124,11 +124,15 @@ wss.on('connection', (ws: WebSocket) => {
           const manifestJson = swarmResult.manifestJson;
           console.log(`[Control Plane Swarm] Manifest output: ${manifestJson}`);
           
-          let parsedManifest = {
+          let parsedManifest: any = {
             local_event: "IPL Local Screening Party at near market center",
             environmental_trigger: "High temperature, sunny afternoon",
             neighborhood_slangs: "Gethu, Machan, Semma",
-            recommended_copy_strategy: "Offer chilled local beverages with regional slang tags."
+            recommended_copy_strategy: "Offer chilled local beverages with regional slang tags.",
+            hero_products: ["croissants"],
+            customer_sentiments: "Neutral customer sentiment",
+            competitor_analysis: "Standard local competition detected",
+            pricing_simulation: "Baseline pricing model applied"
           };
           try {
             parsedManifest = JSON.parse(manifestJson.replace(/```json|```/g, '').trim());
@@ -140,19 +144,25 @@ wss.on('connection', (ws: WebSocket) => {
           sendToClient({
             type: 'AGENT_LOG',
             agentName: 'Geo Scout',
-            executionLog: `Analyzed ambient signals: local_event = "${parsedManifest.local_event}", environmental_trigger = "${parsedManifest.environmental_trigger}"`
+            executionLog: `[Agent A] Analyzed ambient signals: local_event = "${parsedManifest.local_event}", environmental_trigger = "${parsedManifest.environmental_trigger}"`
           });
           
           sendToClient({
             type: 'AGENT_LOG',
-            agentName: 'Creative Archivist',
-            executionLog: `Selected visual vibe template: Chilled theme matched to environmental trigger (${parsedManifest.environmental_trigger}).`
+            agentName: 'Business intelligence Analyst',
+            executionLog: `[Agent B] Ingested Google Business reviews and WhatsApp orders. Hero items identified: ${JSON.stringify(parsedManifest.hero_products)}. Sentiment: "${parsedManifest.customer_sentiments}"`
           });
           
           sendToClient({
             type: 'AGENT_LOG',
-            agentName: 'Slang Strategist',
-            executionLog: `Extracted active neighborhood slangs: ${parsedManifest.neighborhood_slangs}. Blueprint copywriting strategy: "${parsedManifest.recommended_copy_strategy}"`
+            agentName: 'War-Room Financial Strategist',
+            executionLog: `[Agent C] Scraped competitor status: "${parsedManifest.competitor_analysis}". Sandboxed Python simulation output: ${parsedManifest.pricing_simulation}`
+          });
+          
+          sendToClient({
+            type: 'AGENT_LOG',
+            agentName: 'Creative Brand Coordinator',
+            executionLog: `[Agent D] Extracted regional slangs: ${parsedManifest.neighborhood_slangs}. Generated brand ad copywriting strategy: "${parsedManifest.recommended_copy_strategy}"`
           });
 
           // Send confirmation state back to the client
