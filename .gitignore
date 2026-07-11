@@ -54,3 +54,7 @@ android/.gradle/
 android/local.properties
 .expo/
 web-build/
+
+
+*.env
+.env

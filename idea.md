@@ -1,4 +1,4 @@
-# BHARATFLOW ENGINE - Comprehensive System Reference Manual
+# FLOW.AD ENGINE - Comprehensive System Reference Manual
 
 *Document Class: Production Specification & Core Architecture Reference*
 
@@ -8,13 +8,13 @@
 
 ### The Challenge
 
-Traditional digital marketing infrastructure is built for corporations with dedicated creative agencies, data analysts, and large budgets. For millions of Indian micro-merchants (**Rahuls**) and local logistics operators (**Raghus**), setting up ad accounts, navigating dashboards, and designing custom video assets is a non-starter. They rely entirely on organic local discovery networks—WhatsApp Status updates, Instagram Reels, Facebook Marketplace, and Google Maps location markers.
+Traditional digital marketing infrastructure is built for corporations with dedicated creative agencies, data analysts, and large budgets. For millions of local business owners (**Rahuls**), setting up ad accounts, navigating dashboards, and designing custom video assets is a non-starter. They rely entirely on organic local discovery networks—WhatsApp Status updates, Instagram Reels, Facebook Marketplace, and Google Maps location markers.
 
-Furthermore, generic city-wide advertising is ineffective for local stores. A geographic shift of just two kilometers in an Indian market center can mean completely different dialects, local slang, shopping habits, and demographic demands.
+Furthermore, generic city-wide advertising is ineffective for local stores. A geographic shift of just two kilometers in an local market center can mean completely different dialects, local slang, shopping habits, and demographic demands.
 
-### The Solution: BharatFlow Engine
+### The Solution: flow.ad Engine
 
-BharatFlow eliminates the user interface entirely, replacing complex dashboards with a single, live, fluid conversation. Pointing a smartphone camera at an item and talking naturally triggers a secure backend multi-agent swarm that aggregates local context, handles creative asset design, generates localized video, and coordinates nearby delivery drivers.
+flow.ad eliminates the user interface entirely, replacing complex dashboards with a single, live, fluid conversation. Pointing a smartphone camera at an item and talking naturally triggers a secure backend multi-agent swarm that aggregates local context, handles creative asset design, generates localized video, and coordinates nearby delivery drivers.
 
 ---
 
@@ -24,7 +24,7 @@ The system shifts away from traditional request-response structures by utilizing
 
 ```text
 =======================================================================================================================
-                                      BHARATFLOW ENGINE: CORE TOPOLOGY MAP
+                                      FLOW.AD ENGINE: CORE TOPOLOGY MAP
 =======================================================================================================================
 
     [ SYNCHRONOUS PRODUCTION PLANE ]                 [ ASYNCHRONOUS CONTROL PLANE ]
@@ -94,29 +94,37 @@ The background curation layer operates inside an isolated, stateful Linux sandbo
 
 ### Sub-Agent Roles & Internal Collaboration
 
-Rather than operating in isolated sequences, the three agents communicate by reading and writing updates to a single shared file (`session_manifest.json`) within the container:
+Rather than operating in isolated sequences, the agents communicate by reading and writing updates to a single shared file (`session_manifest.json`) within the container:
 
 ```text
-  ┌────────────────────────────────────────────────────────────────────────┐
-  │                   REMOTE LINUX SANDBOX CONTAINER (iAPI)                │
-  │                                                                        │
-  │                    ┌──────────────────────────────┐                    │
-  │                    │     SHARED BLACKBOARD BUS    │                    │
-  │                    │    (session_manifest.json)   │                    │
-  │                    └──────────────▲───────────────┘                    │
-  │                                   │                                    │
-  │         ┌─────────────────────────┼─────────────────────────┐          │
-  │         ▼                         ▼                         ▼          │
-  ┌───────────────────┐     ┌───────────────────┐     ┌────────────────────┐       │
-  │  AGENT A: SCOUT   │     │ AGENT B: ARCHIVIST│     │ AGENT C: STRATEGIST│       │
-  │ (Geo/Weather/Web) │     │ (World Vibe Synth)│     │ (Slang/Margin Calc)│       │
-  └───────────────────┘     └───────────────────┘     └────────────────────┘       │
-  └────────────────────────────────────────────────────────────────────────┘
+  ┌────────────────────────────────────────────────────────────────────────────────────────┐
+  │                          REMOTE LINUX SANDBOX CONTAINER (iAPI)                         │
+  │                                                                                        │
+  │                           ┌──────────────────────────────┐                             │
+  │                           │     SHARED BLACKBOARD BUS    │                             │
+  │                           │    (session_manifest.json)   │                             │
+  │                           └──────────────▲───────────────┘                             │
+  │                                          │                                             │
+  │         ┌──────────────────────┬─────────┴────────┬──────────────────────┐             │
+  │         ▼                      ▼                  ▼                      ▼             │
+  │  ┌──────────────┐      ┌───────────────┐  ┌───────────────┐      ┌───────────────┐     │
+  │  │   AGENT A    │      │    AGENT B    │  │    AGENT C    │      │    AGENT D    │     │
+  │  │  Geo Scout   │      │  BI Analyst   │  │  War-Room Fin │      │  Creative Brand│     │
+  │  └──────────────┘      └───────────────┘  └───────────────┘      └───────────────┘     │
+  │                                          ▲                                             │
+  │                                          │ (Triggered On-Demand at Runtime)            │
+  │                                  ┌───────┴───────┐                                     │
+  │                                  │    AGENT E    │                                     │
+  │                                  │  Ref Curator  │                                     │
+  │                                  └───────────────┘                                     │
+  └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-* **Agent A (The Geo Scout):** Tracks ambient local metrics, scraping event sites (Eventbrite/Meetup), local subreddits (r/bangalore), and weather tables. It maps competitor hours, items, and pricing gaps (e.g., checking if *Zed The Baker* is closed or has high margins).
-* **Agent B (The Creative Archivist):** Evaluates Agent A's signals and applies Gemini's world knowledge to synthesize a dynamic visual design layout matching the product type and local weather (e.g. tropical vibes for hot days, warm colors for cold days).
-* **Agent C (The Slang Strategist & Margin Coordinator):** Pulls high-resonance local slangs and idioms. Crucially, it ingests native WhatsApp Cloud webhook orders and Google Business Profile reviews, then writes and executes a Python margin calculation script in the sandbox to model discount rates (10%, 15%, 20%) assuming a 1.5x volume boost. It then writes the optimal copy and price to `session_manifest.json`.
+* **Agent A (The Geo Scout):** Tracks ambient local metrics, scraping event sites (Eventbrite/Meetup), local subreddits (r/bangalore), and weather tables.
+* **Agent B (The Business Intelligence Analyst):** Ingests native WhatsApp order velocity and Google Business Profile reviews to identify top-velocity items and analyze customer feedback and ratings.
+* **Agent C (The War-Room Financial Strategist):** Scrapes nearby competitor operating hours/prices. Runs an automated sandboxed Python margin simulation based on COGS (30-40% of retail pricing found in orders) and volume scaling (1.5x volume boost) across three discount rates (10%, 15%, 20%). Selects the target maximizing absolute profit growth.
+* **Agent D (The Creative Brand Coordinator):** Determines neighborhood slangs, aligns the brand visual theme, and writes a classy copywriting strategy baseline.
+* **Agent E (The Reference Ad Curator):** Triggered **on-demand** only after the user declares their intent during the Live session. Live API extracts dynamic context tags (e.g. ad tone, type, product, offer details) at runtime and triggers Agent E to run a search for real ad campaigns matching these tags. It loads them as resources to guide the graphic and layout style.
 
 ### Ingested Data Schemas
 
@@ -270,10 +278,10 @@ Once the Creative Director processes the data, it forks the media production int
 │ Target Engine:        │   │ Target Engine:        │   │ Target Engine:        │
 │ Nano Banana 2 Lite    │   │ NB2 Lite Frame Loop   │   │ Gemini Omni Flash     │
 ├───────────────────────┤   ├───────────────────────┤   ├───────────────────────┤
-│ High-res 1K graphic   │   │ Compiles sequential   │   │ Renders 9:16 vertical │
-│ banners with native   │   │ graphic adjustments   │   │ video reels with      │
-│ typographic layouts   │   │ into lightweight,     │   │ conversational style  │
-│ rendered in sub-4s.   │   │ looping GIFs/MP4s.    │   │ and element swapping. │
+│ Generates high-res 1K │   │ Compiles sequential   │   │ Animates and compiles │
+│ graphic keyframe      │   │ adjustments into      │   │ NB2 Lite keyframe     │
+│ stills with native    │   │ lightweight, looping  │   │ stills into 9:16      │
+│ typography.           │   │ GIFs/MP4s.            │   │ vertical video reels. │
 └───────────────────────┘   └───────────────────────┘   └───────────────────────┘
 
 ```

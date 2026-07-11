@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Mic, MicOff, Video, VideoOff, PhoneOff, Phone,
   Settings, AlignLeft, Sparkles, Send, X, Zap,
-  Info, Share2, ExternalLink, Plus
+  Info
 } from 'lucide-react';
 import audioService from './services/audioService';
 
@@ -11,21 +11,11 @@ interface LedgerEntry { id: string; agentName: string; message: string; timestam
 interface ChatMsg { id: string; sender: 'user' | 'ai'; text: string; gallery?: string[]; }
 type State = 'IDLE' | 'CONNECTING' | 'STREAMING' | 'BARGE_IN';
 
-/* ─── Vibe Templates ────────────────────────────────────── */
-const VIBES = [
-  { id: 'default', emoji: '✨', name: 'Default Vibe', event: 'Local Bazaar', trigger: 'Sunny afternoon', slang: 'Boss, Guru, Macha', copy: 'Quality sweet treats & bakery specials. Order now!' },
-  { id: 'midnight', emoji: '🌙', name: 'Midnight Bites', event: 'Late Night Food Crawl', trigger: 'Cool midnight breeze', slang: 'Macha, Da, Semma', copy: 'Hungry at midnight? 🍔 Grab our fresh hot rolls!' },
-  { id: 'monsoon', emoji: '🌧️', name: 'Monsoon Special', event: 'Sudden Monsoon', trigger: 'Cold monsoon rain', slang: 'Gethu, Machan', copy: 'Cozy rains call for hot cakes & filter coffee! ☕' },
-  { id: 'bakery', emoji: '🍰', name: 'Bakery Fresh', event: 'Weekend Patisserie', trigger: 'Breezy sweet scent', slang: 'Macha, Boss', copy: 'Signature croissants & fruit cakes. Indulge now! 🥐' },
-  { id: 'ipl', emoji: '🏏', name: 'IPL Hype', event: 'IPL Screening Match', trigger: 'Hot match night', slang: 'Semma, Gethu', copy: 'Sweeten the victory! Cupcakes in 15 mins! 🏏' },
-];
-
 export default function App() {
   /* ── State ───────────────────────────────────────────── */
   const [connState, setConnState] = useState<State>('IDLE');
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(false);
-  const [vibeIdx, setVibeIdx] = useState(0);
   const [input, setInput] = useState('');
   const [typing, setTyping] = useState(false);
   const [permError, setPermError] = useState<string | null>(null);
@@ -38,16 +28,12 @@ export default function App() {
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [wsUrlOverride, setWsUrlOverride] = useState<string>(() => localStorage.getItem('ws_url_override') || '');
   const [logs, setLogs] = useState<LedgerEntry[]>([]);
+
+  // Business profile — starts empty, populated by BUSINESS_CONFIRMED from server
   const [profile, setProfile] = useState({
-    businessName: 'zaid patisserie',
-    merchantLocation: 'Dairy Circle, Bengaluru',
-    businessCategory: 'Bakery and Cake Shop',
-  });
-  const [manifest, setManifest] = useState({
-    local_event: VIBES[0].event,
-    environmental_trigger: VIBES[0].trigger,
-    neighborhood_slangs: VIBES[0].slang,
-    recommended_copy_strategy: VIBES[0].copy,
+    businessName: '',
+    merchantLocation: '',
+    businessCategory: '',
   });
 
   /* Refs */
@@ -129,19 +115,23 @@ export default function App() {
     if (wsRef.current) endSession();
     setConnState('CONNECTING');
 
+    // Reset profile for new session
+    setProfile({ businessName: '', merchantLocation: '', businessCategory: '' });
+
     // Choose WebSocket protocol dynamically (wss:// if secure, ws:// otherwise)
     const defaultWsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const defaultWsUrl = `${defaultWsProtocol}//${window.location.hostname}:50051`;
     const finalWsUrl = wsUrlOverride.trim() || defaultWsUrl;
 
-    addLog('Meta Orchestrator', `Connecting to Twin-Plane Gateway at ${finalWsUrl}...`);
+    addLog('Meta Orchestrator', `Connecting to Live-first Gateway at ${finalWsUrl}...`);
     const ws = new WebSocket(finalWsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
       setConnState('STREAMING');
-      addLog('Gateway', 'Connected. Broadcasting context matrices...');
-      ws.send(JSON.stringify({ type: 'INIT_SESSION', sessionId: sessionId.current, businessProfile: profile }));
+      addLog('Gateway', 'Connected. Starting cold-start conversational boot...');
+      // Send minimal INIT_SESSION — no businessProfile payload
+      ws.send(JSON.stringify({ type: 'INIT_SESSION', sessionId: sessionId.current }));
     };
     ws.onmessage = (ev) => {
       try {
@@ -155,24 +145,35 @@ export default function App() {
             setTimeout(() => setConnState('STREAMING'), 1500);
           } else setConnState(msg.state === 'STREAMING' ? 'STREAMING' : 'IDLE');
           addLog('System Gateway', `State → ${msg.state}`);
-        } else if (msg.type === 'MANIFEST_UPDATED' && msg.manifest) {
-          setManifest(msg.manifest);
+        } else if (msg.type === 'TRANSCRIPT' && msg.transcript) {
+          // Surface Live conversation text in the chat feed
+          setTyping(false);
           setMsgs(p => [...p, {
-            id: `ai_${Date.now()}`, sender: 'ai',
-            text: `Swarm synced! Copy: "${msg.manifest.recommended_copy_strategy}"`
+            id: `${msg.sender}_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+            sender: msg.sender || 'ai',
+            text: msg.transcript
           }]);
-          addLog('Swarm Coordinator', 'Manifest synchronized.');
+        } else if (msg.type === 'BUSINESS_CONFIRMED' && msg.businessProfile) {
+          // Server confirmed business identity — populate profile display
+          setProfile({
+            businessName: msg.businessProfile.businessName,
+            merchantLocation: msg.businessProfile.merchantLocation,
+            businessCategory: msg.businessProfile.businessCategory,
+          });
+          addLog('Discovery Agent', `Business confirmed: "${msg.businessProfile.businessName}" at ${msg.businessProfile.merchantLocation}`);
         } else if (msg.type === 'AGENT_LOG' && msg.agentName) {
           addLog(msg.agentName, msg.executionLog);
         } else if (msg.type === 'AD_PREVIEW') {
           setTyping(false);
-          const gallery = msg.stillUrl ? [msg.stillUrl, ...(msg.keyframes || [])] : (msg.url ? [msg.url] : []);
+          const gallery = msg.stillUrl
+            ? [msg.stillUrl, msg.cinematicUrl, ...(msg.keyframes || [])].filter(Boolean)
+            : (msg.url ? [msg.url] : []);
           setMsgs(p => [
             ...p,
             {
               id: `ai_preview_${Date.now()}`,
               sender: 'ai',
-              text: `Creative assets compiled! High-resolution Still (1:1) and Cinematic vertical (9:16) storyboard frames are ready for review.`,
+              text: `Creative assets compiled! High-resolution Still (1:1) and Cinematic vertical (9:16) motion video are ready for review.`,
               gallery: gallery
             }
           ]);
@@ -238,39 +239,23 @@ export default function App() {
     return () => clearInterval(iv);
   }, [connState, camOn]);
 
-  /* ── Vibe select ─────────────────────────────────────── */
-  const selectVibe = (i: number) => {
-    setVibeIdx(i);
-    const v = VIBES[i];
-    const m = {
-      local_event: v.event, environmental_trigger: v.trigger,
-      neighborhood_slangs: v.slang, recommended_copy_strategy: v.copy
-    };
-    setManifest(m);
-    setMsgs(p => [...p, {
-      id: `ai_${Date.now()}`, sender: 'ai',
-      text: `${v.emoji} Vibe shifted to **${v.name}**. New copy: "${v.copy}"`
-    }]);
-    if (wsRef.current?.readyState === WebSocket.OPEN)
-      wsRef.current.send(JSON.stringify({ type: 'UPDATE_CONTEXT', manifest: m }));
-    addLog('Meta Orchestrator', `Vibe → "${v.name}"`);
-  };
-
   /* ── Send text message ───────────────────────────────── */
   const sendMsg = () => {
     const txt = input.trim();
     if (!txt) return;
-    setMsgs(p => [...p, { id: `u_${Date.now()}`, sender: 'user', text: txt }]);
     setInput('');
     setTyping(true);
     if (wsRef.current?.readyState === WebSocket.OPEN) {
+      // Text is sent to server which routes to Live and echoes back as TRANSCRIPT
       wsRef.current.send(JSON.stringify({ type: 'TEXT_INPUT', text: txt }));
     } else {
+      // Not connected — show offline message
+      setMsgs(p => [...p, { id: `u_${Date.now()}`, sender: 'user', text: txt }]);
       setTimeout(() => {
         setTyping(false);
         setMsgs(p => [...p, {
           id: `ai_${Date.now()}`, sender: 'ai',
-          text: `Got it — "${txt}". Start a live session to sync with the Swarm agents.`
+          text: `Start a live session first — tap the phone icon to connect.`
         }]);
       }, 900);
     }
@@ -365,7 +350,11 @@ export default function App() {
                 {m.gallery && (
                   <div className="bubble-gallery">
                     {m.gallery.map((src, i) => (
-                      <img key={i} src={src} className="gallery-img" alt="creative preview" />
+                      src.includes('.mp4') ? (
+                        <video key={i} src={src} controls className="gallery-video" style={{ width: '80px', height: '80px', borderRadius: '12px', objectFit: 'cover', flexShrink: 0 }} />
+                      ) : (
+                        <img key={i} src={src} className="gallery-img" alt="creative preview" />
+                      )
                     ))}
                   </div>
                 )}
@@ -396,15 +385,6 @@ export default function App() {
 
       {/* ── Bottom bar ── */}
       <div className="bottom-bar">
-        {/* Vibe chips */}
-        <div className="chips-row">
-          {VIBES.map((v, i) => (
-            <button key={v.id} className={`chip ${vibeIdx === i ? 'active' : ''}`} onClick={() => selectVibe(i)}>
-              {v.emoji} {v.name}
-            </button>
-          ))}
-        </div>
-
         {/* Input + controls row */}
         <div className="input-row">
           {/* Media controls */}
@@ -537,23 +517,12 @@ export default function App() {
                 <input
                   className="field-input"
                   value={profile[k]}
-                  disabled={isLive}
-                  onChange={e => setProfile(p => ({ ...p, [k]: e.target.value }))}
+                  disabled
+                  readOnly
+                  placeholder={profile[k] || 'Discovered via conversation...'}
                 />
               </div>
             ))}
-            <div className="field-group" style={{ marginTop: 4 }}>
-              <label className="field-label">Active Vibe</label>
-              <div className="field-input" style={{ color: '#374151', display: 'flex', alignItems: 'center', gap: 6 }}>
-                {VIBES[vibeIdx].emoji} {VIBES[vibeIdx].name}
-              </div>
-            </div>
-            <div className="field-group">
-              <label className="field-label">Active Manifest</label>
-              <div className="field-input" style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.7, height: 'auto' }}>
-                {manifest.local_event} · {manifest.neighborhood_slangs}
-              </div>
-            </div>
             <div className="field-group">
               <label className="field-label">WebSocket Gateway URL (Optional Override)</label>
               <input

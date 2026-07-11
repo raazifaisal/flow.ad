@@ -1,3 +1,4 @@
+import './clean-env';
 import { GoogleGenAI } from '@google/genai';
 
 const ai = new GoogleGenAI({});
@@ -13,6 +14,93 @@ interface BusinessProfile {
 interface SwarmResult {
   interactionId: string;
   manifestJson: string;
+}
+
+interface DiscoveryResult {
+  found: boolean;
+  businessName: string;
+  location: string;
+  category: string;
+  summary: string;
+  operatingHours?: string;
+  rating?: string;
+}
+
+/**
+ * Agent 0: Business Discovery.
+ * Uses the Interactions API with Google Search to verify a business exists
+ * and return structured information for user confirmation.
+ */
+export async function discoverBusiness(
+  businessName: string,
+  location: string
+): Promise<DiscoveryResult> {
+  const fallback: DiscoveryResult = {
+    found: false,
+    businessName,
+    location,
+    category: 'Unknown',
+    summary: `Could not verify "${businessName}" at "${location}" via web search. Please confirm the details manually.`
+  };
+
+  try {
+    const discoveryInstruction = `
+Context Flag: System Container Initialization Engine
+Target Environment: Remote Linux Sandbox
+Core Task: Business Identity Verification
+
+You are Agent 0, the Business Discovery Agent. Your objective is to verify and retrieve details about a local business.
+
+Search Target:
+- Business Name: "${businessName}"
+- Location: "${location}"
+
+Using the google_search tool:
+1. Search for "${businessName}" near "${location}" to verify the business exists.
+2. Find the business category (e.g. bakery, cafe, restaurant, boutique).
+3. Extract a brief summary of what the business does, any notable reviews or reputation mentions.
+4. Find operating hours if available.
+5. Find any star rating or review score if available.
+
+Output exactly a single raw valid JSON object with these keys:
+{
+  "found": true or false,
+  "businessName": "the confirmed/corrected official name",
+  "location": "confirmed address or area",
+  "category": "business category",
+  "summary": "2-3 sentence description of the business based on search results",
+  "operatingHours": "operating hours if found, or null",
+  "rating": "star rating if found, or null"
+}
+
+Do not include markdown wrappers (e.g., \`\`\`json) or any conversational text. Output only the raw valid JSON payload.
+`;
+
+    console.log('[Discovery Agent] Searching for business:', businessName, 'at', location);
+    const interaction = await (ai as any).interactions.create({
+      agent: 'antigravity-preview-05-2026',
+      input: discoveryInstruction,
+      environment: 'remote',
+    });
+
+    console.log(`[Discovery Agent] Created interaction: ${interaction.id}`);
+    const extractedText = extractTextFromInteraction(interaction);
+    console.log('[Discovery Agent] Extracted result:', extractedText);
+
+    if (extractedText) {
+      try {
+        const parsed = JSON.parse(extractedText.replace(/```json|```/g, '').trim());
+        return parsed as DiscoveryResult;
+      } catch (e) {
+        console.warn('[Discovery Agent] Failed to parse response JSON, using fallback.');
+      }
+    }
+
+    return fallback;
+  } catch (error: any) {
+    console.warn('[Discovery Agent] API failed:', error.message || error);
+    return fallback;
+  }
 }
 
 /**
