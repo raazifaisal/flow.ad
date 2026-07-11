@@ -15,18 +15,28 @@ interface SwarmResult {
 }
 
 /**
+ * Helper to wrap a promise with a timeout.
+ */
+function withTimeout(promise: Promise<any>, ms: number, timeoutError: Error): Promise<any> {
+  return Promise.race([
+    promise,
+    new Promise<any>((_, reject) => setTimeout(() => reject(timeoutError), ms))
+  ]);
+}
+
+/**
  * Control Plane Architecture: Initializes a stateful sandbox interaction thread
- * and runs Agent A, B, and C.
+ * and runs Agent A, B, and C with a resilient 8-second timeout guard.
  */
 export async function spawnContextIngestionSwarm(
   sessionId: string,
   profile: BusinessProfile
 ): Promise<SwarmResult> {
   const defaultManifest = JSON.stringify({
-    local_event: "IPL Local Screening Party at near market center",
-    environmental_trigger: "High temperature, sunny afternoon",
-    neighborhood_slangs: "Gethu, Machan, Semma",
-    recommended_copy_strategy: `Offer chilled beverages at ${profile.businessName} with regional slang tags.`
+    local_event: "IPL Local Screening Party at Malleshwaram Stadium",
+    environmental_trigger: "High temperature, sunny afternoon (32°C)",
+    neighborhood_slangs: "Guru, Sakkath, Bombaat",
+    recommended_copy_strategy: `Offer chilled fresh coconut water at ${profile.businessName} with localized script: 'Sakkath Sweet ಎಳನೀರು!'`
   });
 
   try {
@@ -54,11 +64,19 @@ Consolidate all values into a single, clean JSON string containing exclusively t
 Constraint Check: Do not include markdown code wrappers (e.g., \`\`\`json) or any conversational text strings. Output only the raw valid JSON payload.
 `;
 
-    const interaction = await (ai as any).interactions.create({
+    console.log('[Swarm Ingestion] Connecting to Interactions API...');
+    const interactionPromise = (ai as any).interactions.create({
       agent: 'antigravity-preview-05-2026',
       input: swarmInstruction,
       environment: 'remote',
     });
+
+    // Enforce an 8-second execution limit for the remote sandbox to prevent connection hangs
+    const interaction = await withTimeout(
+      interactionPromise,
+      8000,
+      new Error('Interactions API request timed out')
+    );
 
     console.log(`[Swarm Ingestion] Successfully created interaction: ${interaction.id}`);
     
@@ -67,7 +85,7 @@ Constraint Check: Do not include markdown code wrappers (e.g., \`\`\`json) or an
       manifestJson: interaction.text || defaultManifest
     };
   } catch (error: any) {
-    console.warn('[Control Plane Exception] Swarm API not available. Fallback to default baseline context:', error.message || error);
+    console.warn('[Control Plane Exception] Swarm API failed or timed out. Fallback to baseline context:', error.message || error);
     return {
       interactionId: `mock_thread_${Date.now()}`,
       manifestJson: defaultManifest
@@ -76,28 +94,34 @@ Constraint Check: Do not include markdown code wrappers (e.g., \`\`\`json) or an
 }
 
 /**
- * Appends context updates to the existing stateful interaction thread in the sandbox.
+ * Appends context updates to the existing stateful interaction thread in the sandbox with an 8-second timeout guard.
  */
 export async function updateInteractionContext(
   interactionId: string,
   inputUpdate: string
 ): Promise<string> {
   const defaultManifest = JSON.stringify({
-    local_event: "IPL Local Screening Party at near market center",
-    environmental_trigger: "High temperature, sunny afternoon",
-    neighborhood_slangs: "Gethu, Machan, Semma",
-    recommended_copy_strategy: "Offer chilled local beverages with regional slang tags."
+    local_event: "IPL Local Screening Party at Malleshwaram Stadium",
+    environmental_trigger: "High temperature, sunny afternoon (32°C)",
+    neighborhood_slangs: "Guru, Sakkath, Bombaat",
+    recommended_copy_strategy: "Offer chilled fresh coconut water with local slang tags."
   });
 
   try {
-    console.log(`[Swarm Context Update] Sending new step to thread: ${interactionId}`);
+    console.log(`[Swarm Context Update] Sending update to thread: ${interactionId}`);
     
-    const interaction = await (ai as any).interactions.create({
+    const interactionPromise = (ai as any).interactions.create({
       agent: 'antigravity-preview-05-2026',
       input: inputUpdate,
       interactionId: interactionId,
       environment: 'remote',
     });
+
+    const interaction = await withTimeout(
+      interactionPromise,
+      8000,
+      new Error('Interaction update request timed out')
+    );
 
     return interaction.text || defaultManifest;
   } catch (error: any) {
